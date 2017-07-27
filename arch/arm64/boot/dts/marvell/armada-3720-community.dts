@@ -60,6 +60,18 @@
 
 	soc {
 		internal-regs {
+			spi0: spi@10600 {
+				status = "okay";
+
+				tpm_spi_tis@1{
+					compatible = "tcg,tpm_spi_tis";
+					reg = <1>;	/* Chip Select 1 */
+					spi-max-frequency = <500000>;
+					pinctrl-names = "default";
+					pinctrl-0 = <&spi0_pins &spi_quad_pins>;
+				};
+			};
+
 			uart0: serial@12000 {
 				status = "okay";
 			};
