@@ -271,10 +271,10 @@ static void advk_pcie_setup_hw(struct advk_pcie *pcie)
 		PCIE_CORE_CTRL2_TD_ENABLE;
 	advk_writel(pcie, reg, PCIE_CORE_CTRL2_REG);
 
-	/* Set GEN2 */
+	/* Set GEN1 */
 	reg = advk_readl(pcie, PCIE_CORE_CTRL0_REG);
 	reg &= ~PCIE_GEN_SEL_MSK;
-	reg |= SPEED_GEN_2;
+	reg |= SPEED_GEN_1;
 	advk_writel(pcie, reg, PCIE_CORE_CTRL0_REG);
 
 	/* Set lane X1 */
