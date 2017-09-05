@@ -694,6 +694,7 @@ int tpm_tis_init_generic(struct device *dev, struct tpm_chip *chip, unsigned int
 
 	return tpm_chip_register(chip);
 out_err:
+	dev_err(dev, "Could not find TPM\n");
 	tpm_tis_remove(chip);
 	return rc;
 }
