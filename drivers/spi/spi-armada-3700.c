@@ -1064,6 +1064,7 @@ static int a3700_spi_probe(struct platform_device *pdev)
 			goto error;
 		spi->input_clk_freq = clk_get_rate(spi->clk);
 	}
+	dev_err(&pdev->dev, "input_clk_freq %u\n", spi->input_clk_freq);
 
 	if (of_find_property(of_node, "fifo-mode", NULL)) {
 		dev_err(&pdev->dev, "fifo mode\n");

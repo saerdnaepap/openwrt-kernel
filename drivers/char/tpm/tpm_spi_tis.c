@@ -127,8 +127,11 @@ tpm_tis_spi_probe(struct spi_device *dev)
 		return PTR_ERR(chip);
 
 	comms->spi_device = dev;
+	dev_err(&dev->dev,"cs %d, max_speed_hz %u\n", comms->spi_device->chip_select,
+			comms->spi_device->max_speed_hz);
 	comms->spi_xfer.tx_buf = comms->tx_buf;
 	comms->spi_xfer.rx_buf = comms->rx_buf;
+	comms->spi_xfer.speed_hz = 19888888;
 
 	TPM_VPRIV(chip) = comms;
 	return tpm_tis_init_generic(&dev->dev, chip, 0, interrupts, false);
