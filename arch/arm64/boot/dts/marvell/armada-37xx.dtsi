@@ -138,12 +138,13 @@
 			dma-coherent;
 
 			spi0: spi@10600 {
-				compatible = "marvell,armada3700-spi";
+				compatible = "marvell,armada-3700-spi";
 				reg = <0x10600 0xa00>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				cell-index = <0>;
 				clocks = <&ngateclk 12>;
+				num-cs = <4>;
 				/* fifo-mode; */
 				interrupts = <GIC_SPI 0 IRQ_TYPE_LEVEL_HIGH>;
 				status = "disabled";
