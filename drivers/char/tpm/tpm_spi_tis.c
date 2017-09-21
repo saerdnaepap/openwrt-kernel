@@ -63,7 +63,12 @@ static void read_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 
 	comms->tx_buf[2] = (addr>>8)  & 0xFF;
 	comms->tx_buf[3] = (addr)     & 0xFF;
 
+	printk("read_spi_bytes len %u\n", comms->spi_xfer.len);
+
 	spi_sync_transfer(comms->spi_device, &comms->spi_xfer, 1);
+//	spi_write_then_read(comms->spi_device, &comms->tx_buf, comms->spi_xfer.len,
+//						&comms->rx_buf, comms->spi_xfer.len);
+
 	printk("result: 0x%x 0x%x 0x%x 0x%x 0x%x\n", comms->rx_buf[0], comms->rx_buf[1],
 			comms->rx_buf[2], comms->rx_buf[3], comms->rx_buf[4]);
 	memcpy(result, &comms->rx_buf[4], len);

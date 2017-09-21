@@ -144,7 +144,7 @@
 				#size-cells = <0>;
 				cell-index = <0>;
 				clocks = <&ngateclk 12>;
-				fifo-mode;
+				/* fifo-mode; */
 				interrupts = <GIC_SPI 0 IRQ_TYPE_LEVEL_HIGH>;
 				status = "disabled";
 			};
