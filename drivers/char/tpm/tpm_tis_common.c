@@ -18,6 +18,7 @@ static int wait_startup(struct tpm_chip *chip, int l)
 
 	do {
 		read_tpm_byte(chip, TPM_ACCESS(l), &access);
+		printk("tpm: read access 0x%x\n", access);
 		if (access & TPM_ACCESS_VALID)
 			return 0;
 		msleep(TPM_TIMEOUT);

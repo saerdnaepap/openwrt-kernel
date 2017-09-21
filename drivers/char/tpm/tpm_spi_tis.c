@@ -64,6 +64,8 @@ static void read_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 
 	comms->tx_buf[3] = (addr)     & 0xFF;
 
 	spi_sync_transfer(comms->spi_device, &comms->spi_xfer, 1);
+	printk("result: 0x%x 0x%x 0x%x 0x%x 0x%x\n", comms->rx_buf[0], comms->rx_buf[1],
+			comms->rx_buf[2], comms->rx_buf[3], comms->rx_buf[4]);
 	memcpy(result, &comms->rx_buf[4], len);
 	memset(comms->rx_buf, 0, 4 + len);
 }
@@ -131,7 +133,6 @@ tpm_tis_spi_probe(struct spi_device *dev)
 			comms->spi_device->max_speed_hz);
 	comms->spi_xfer.tx_buf = comms->tx_buf;
 	comms->spi_xfer.rx_buf = comms->rx_buf;
-	comms->spi_xfer.speed_hz = 19888888; /* WAR to force a3700 cpu spi clk to low speed. */
 
 	TPM_VPRIV(chip) = comms;
 	return tpm_tis_init_generic(&dev->dev, chip, 0, interrupts, false);
