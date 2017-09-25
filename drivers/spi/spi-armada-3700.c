@@ -112,6 +112,7 @@ struct a3700_spi {
 	const u8 *tx_buf;
 	u8 *rx_buf;
 	size_t buf_len;
+	size_t rx_buf_len;
 	u8 byte_len;
 	u32 wait_mask;
 	struct completion done;
@@ -500,6 +501,7 @@ static void a3700_spi_header_set(struct a3700_spi *a3700_spi)
 			a3700_spi->tx_buf++;
 		}
 		spireg_write(a3700_spi, A3700_SPI_IF_ADDR_REG, val);
+		printk("txa 0x%x\n", val);
 	}
 }
 
@@ -517,6 +519,7 @@ static int a3700_spi_fifo_write(struct a3700_spi *a3700_spi)
 
 	while (!a3700_is_wfifo_full(a3700_spi) && a3700_spi->buf_len) {
 		val = cpu_to_le32(*(u32 *)a3700_spi->tx_buf);
+		printk("tx: 0x%x\n",val);
 		spireg_write(a3700_spi, A3700_SPI_DATA_OUT_REG, val);
 		a3700_spi->buf_len -= 4;
 		a3700_spi->tx_buf += 4;
@@ -536,14 +539,24 @@ static int a3700_spi_fifo_read(struct a3700_spi *a3700_spi)
 {
 	u32 val;
 
-	while (!a3700_is_rfifo_empty(a3700_spi) && a3700_spi->buf_len) {
+	/* it seems that reading is triggered by sending the first byte.
+	 * Therefore the rfifo always misses the first byte, which is not
+	 * critical in a single write/read access. Therefore shift the read
+	 * buffer by one byte if we are called in a parallel write/read
+	 * transfer.
+	 */
+//	if (a3700_spi->tx_buf)
+//		a3700_spi->rx_buf++;
+
+	while (!a3700_is_rfifo_empty(a3700_spi) && a3700_spi->rx_buf_len) {
 		val = spireg_read(a3700_spi, A3700_SPI_DATA_IN_REG);
-		if (a3700_spi->buf_len >= 4) {
+		printk("rx 0x%x, rx_buf_len %lu\n", val, a3700_spi->rx_buf_len);
+		if (a3700_spi->rx_buf_len >= 4) {
 			u32 data = le32_to_cpu(val);
 
 			memcpy(a3700_spi->rx_buf, &data, 4);
 
-			a3700_spi->buf_len -= 4;
+			a3700_spi->rx_buf_len -= 4;
 			a3700_spi->rx_buf += 4;
 		} else {
 			/*
@@ -551,11 +564,11 @@ static int a3700_spi_fifo_read(struct a3700_spi *a3700_spi)
 			 * avoid memory overwriting and just write the left rx
 			 * buffer bytes.
 			 */
-			while (a3700_spi->buf_len) {
+			while (a3700_spi->rx_buf_len) {
 				*a3700_spi->rx_buf = val & 0xff;
 				val >>= 8;
 
-				a3700_spi->buf_len--;
+				a3700_spi->rx_buf_len--;
 				a3700_spi->rx_buf++;
 			}
 		}
@@ -623,6 +636,8 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 	a3700_spi->tx_buf  = xfer->tx_buf;
 	a3700_spi->rx_buf  = xfer->rx_buf;
 	a3700_spi->buf_len = xfer->len;
+	a3700_spi->rx_buf_len = xfer->len;
+	//printk("xfer->len %u\n", xfer->len);
 
 	if (xfer->tx_buf)
 		nbits = xfer->tx_nbits;
@@ -641,7 +656,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 	if (xfer->rx_buf) {
 		/* Set read data length */
 		spireg_write(a3700_spi, A3700_SPI_IF_DIN_CNT_REG,
-			     a3700_spi->buf_len);
+			     a3700_spi->rx_buf_len);
 		/* Start READ transfer */
 		val = spireg_read(a3700_spi, A3700_SPI_IF_CFG_REG);
 		val &= ~A3700_SPI_RW_EN;
@@ -662,7 +677,23 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 		a3700_spi->xmit_data = (a3700_spi->buf_len != 0);
 	}
 
-	while (a3700_spi->buf_len) {
+//	while (a3700_spi->rx_buf_len) {
+		//printk("rx_buf_len %lu\n", a3700_spi->rx_buf_len);
+		if (a3700_spi->rx_buf) {
+			/* Wait rfifo ready */
+			if (!a3700_spi_transfer_wait(spi,
+						     A3700_SPI_RFIFO_RDY)) {
+				dev_err(&spi->dev,
+					"wait rfifo ready timed out\n");
+				ret = -ETIMEDOUT;
+				goto error;
+			}
+			/* Drain out the rfifo */
+			ret = a3700_spi_fifo_read(a3700_spi);
+			if (ret)
+				goto error;
+		} else
+		//printk("tx_buf_len %lu\n", a3700_spi->buf_len);
 		if (a3700_spi->tx_buf) {
 			/* Wait wfifo ready */
 			if (!a3700_spi_transfer_wait(spi,
@@ -676,21 +707,8 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 			ret = a3700_spi_fifo_write(a3700_spi);
 			if (ret)
 				goto error;
-		} else if (a3700_spi->rx_buf) {
-			/* Wait rfifo ready */
-			if (!a3700_spi_transfer_wait(spi,
-						     A3700_SPI_RFIFO_RDY)) {
-				dev_err(&spi->dev,
-					"wait rfifo ready timed out\n");
-				ret = -ETIMEDOUT;
-				goto error;
-			}
-			/* Drain out the rfifo */
-			ret = a3700_spi_fifo_read(a3700_spi);
-			if (ret)
-				goto error;
 		}
-	}
+//	}
 
 	/*
 	 * Stop a write transfer in fifo mode:
@@ -704,7 +722,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 	 *	   register
 	 *	- just wait XFER_START bit clear
 	 */
-	if (a3700_spi->tx_buf) {
+	if ((a3700_spi->tx_buf) && !(a3700_spi->rx_buf)) {
 		if (a3700_spi->xmit_data) {
 			/*
 			 * If there are data written to the SPI device, wait
@@ -802,7 +820,7 @@ static int a3700_spi_probe(struct platform_device *pdev)
 	master->transfer_one = a3700_spi_transfer_one;
 	master->unprepare_message = a3700_spi_unprepare_message;
 	master->set_cs = a3700_spi_set_cs;
-	master->flags = SPI_MASTER_HALF_DUPLEX;
+//	master->flags = SPI_MASTER_HALF_DUPLEX;
 	master->mode_bits |= (SPI_RX_DUAL | SPI_TX_DUAL |
 			      SPI_RX_QUAD | SPI_TX_QUAD);
 

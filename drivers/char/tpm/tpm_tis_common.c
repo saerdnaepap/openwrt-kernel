@@ -18,7 +18,7 @@ static int wait_startup(struct tpm_chip *chip, int l)
 
 	do {
 		read_tpm_byte(chip, TPM_ACCESS(l), &access);
-		printk("tpm: read access 0x%x\n", access);
+		//printk("tpm: read access 0x%x\n", access);
 		if (access & TPM_ACCESS_VALID)
 			return 0;
 		msleep(TPM_TIMEOUT);
@@ -31,6 +31,7 @@ static int check_locality(struct tpm_chip *chip, int l)
 	u8 access;
 
 	read_tpm_byte(chip, TPM_ACCESS(l), &access);
+	printk("tpm: check_locality access 0x%x\n", access);
 	if ((access & (TPM_ACCESS_ACTIVE_LOCALITY | TPM_ACCESS_VALID)) ==
 	    (TPM_ACCESS_ACTIVE_LOCALITY | TPM_ACCESS_VALID))
 		return chip->vendor.locality = l;
@@ -58,9 +59,12 @@ static int request_locality(struct tpm_chip *chip, int l)
 	if (check_locality(chip, l) >= 0)
 		return l;
 
+	dev_info(&chip->dev, "request use\n");
 	write_tpm_byte(chip, TPM_ACCESS(l), TPM_ACCESS_REQUEST_USE);
 
 	stop = jiffies + chip->vendor.timeout_a;
+
+	return -1; //for testing
 
 	if (chip->vendor.irq) {
 again:
@@ -82,6 +86,7 @@ again:
 		do {
 			if (check_locality(chip, l) >= 0)
 				return l;
+			dev_info(&chip->dev, "request use check\n");
 			msleep(TPM_TIMEOUT);
 		} while (time_before(jiffies, stop));
 	}
@@ -517,11 +522,13 @@ int tpm_tis_init_generic(struct device *dev, struct tpm_chip *chip, unsigned int
 	chip->vendor.timeout_c = TIS_TIMEOUT_C_MAX;
 	chip->vendor.timeout_d = TIS_TIMEOUT_D_MAX;
 
+	dev_info(dev, "wait_startup\n");
 	if (wait_startup(chip, 0) != 0) {
 		rc = -ENODEV;
 		goto out_err;
 	}
 
+	dev_info(dev, "request_locality\n");
 	if (request_locality(chip, 0) != 0) {
 		rc = -ENODEV;
 		goto out_err;
