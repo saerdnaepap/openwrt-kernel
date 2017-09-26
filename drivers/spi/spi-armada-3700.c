@@ -27,7 +27,7 @@
 
 #define DRIVER_NAME			"armada_3700_spi"
 
-#define A3700_SPI_TIMEOUT		10
+#define A3700_SPI_TIMEOUT		20
 
 /* SPI Register Offest */
 #define A3700_SPI_IF_CTRL_REG		0x00

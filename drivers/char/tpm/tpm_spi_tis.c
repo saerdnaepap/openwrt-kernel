@@ -52,10 +52,12 @@ struct spi_comms {
 
 static void read_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 *result){
 	struct spi_comms *comms  = TPM_VPRIV(chip);
+	struct spi_message msg;
+
 	if (len > MAX_SPI_FRAMESIZE){
 		pr_err("too large1\n");
 		return; // ADD error
-}
+	}
 	memset(comms->tx_buf, 0, 4 + len);
 	comms->spi_xfer.len = 4 + len ;
 	comms->tx_buf[0] = 0x80 | (len-1); //0x80 = read  | 0=1byte
@@ -65,7 +67,11 @@ static void read_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 
 
 	//printk("read_spi_bytes len %u\n", comms->spi_xfer.len);
 
-	spi_sync_transfer(comms->spi_device, &comms->spi_xfer, 1);
+//	spi_sync_transfer(comms->spi_device, &comms->spi_xfer, 1);
+
+	spi_message_init_with_transfers(&msg, &comms->spi_xfer, 1);
+
+	spi_sync_locked(comms->spi_device, &msg);
 
 //	printk("result: 0x%x 0x%x 0x%x 0x%x 0x%x\n", comms->rx_buf[0], comms->rx_buf[1],
 //			comms->rx_buf[2], comms->rx_buf[3], comms->rx_buf[4]);
@@ -75,6 +81,9 @@ static void read_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 
 
 static void write_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 *value){
 	struct spi_comms *comms = TPM_VPRIV(chip);
+	struct spi_transfer	t = {0};
+	struct spi_message	m;
+
 	if (len > MAX_SPI_FRAMESIZE) {
 		pr_err("too large1\n");
 		return; // ADD error
@@ -90,7 +99,16 @@ static void write_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8
 //			comms->tx_buf[2], comms->tx_buf[3], comms->tx_buf[4]);
 
 //	spi_sync_transfer(comms->spi_device, &comms->spi_xfer, 1);
-	spi_write(comms->spi_device, &comms->tx_buf, comms->spi_xfer.len);
+//	spi_write(comms->spi_device, &comms->tx_buf, comms->spi_xfer.len);
+	t.tx_buf = comms->tx_buf;
+	t.rx_buf = NULL;
+	t.len = comms->spi_xfer.len;
+
+	spi_message_init(&m);
+	spi_message_add_tail(&t, &m);
+
+	spi_sync_locked(comms->spi_device, &m);
+
 	memset(comms->rx_buf, 0, 4 + len);
 }
 
