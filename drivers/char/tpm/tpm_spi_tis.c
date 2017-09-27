@@ -58,6 +58,9 @@ static void read_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 
 		pr_err("too large1\n");
 		return; // ADD error
 	}
+
+	spi_bus_lock(comms->spi_device->master);
+
 	memset(comms->tx_buf, 0, 4 + len);
 	comms->spi_xfer.len = 4 + len ;
 	comms->tx_buf[0] = 0x80 | (len-1); //0x80 = read  | 0=1byte
@@ -77,6 +80,8 @@ static void read_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 
 //			comms->rx_buf[2], comms->rx_buf[3], comms->rx_buf[4]);
 	memcpy(result, &comms->rx_buf[4], len);
 	memset(comms->rx_buf, 0, 4 + len);
+
+	spi_bus_unlock(comms->spi_device->master);
 }
 
 static void write_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 *value){
@@ -88,6 +93,9 @@ static void write_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8
 		pr_err("too large1\n");
 		return; // ADD error
 	}
+
+	spi_bus_lock(comms->spi_device->master);
+
 	memset(comms->tx_buf, 0, 4 + len);
 	comms->spi_xfer.len = 4 + len ;
 	comms->tx_buf[0] = 0x00 | (len-1); //0x00 = write | 0 = 1byte
@@ -110,6 +118,8 @@ static void write_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8
 	spi_sync_locked(comms->spi_device, &m);
 
 	memset(comms->rx_buf, 0, 4 + len);
+
+	spi_bus_unlock(comms->spi_device->master);
 }
 
 static const struct tpm_class_ops tpm_tis = {
