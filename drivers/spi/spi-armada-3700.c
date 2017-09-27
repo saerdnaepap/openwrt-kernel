@@ -27,7 +27,7 @@
 
 #define DRIVER_NAME			"armada_3700_spi"
 
-#define A3700_SPI_TIMEOUT		20
+#define A3700_SPI_TIMEOUT		10
 
 /* SPI Register Offest */
 #define A3700_SPI_IF_CTRL_REG		0x00
@@ -217,6 +217,7 @@ static void a3700_spi_clock_set(struct a3700_spi *a3700_spi,
 {
 	u32 val;
 	u32 prescale;
+	u32 next_even;
 
 	/*
 	* SPI controller has a maximum output clock freq to flash,
@@ -226,6 +227,15 @@ static void a3700_spi_clock_set(struct a3700_spi *a3700_spi,
 		prescale = DIV_ROUND_UP(clk_get_rate(a3700_spi->clk), A3700_SPI_MAX_OUTPUT_CLK_FREQ);
 	else
 		prescale = DIV_ROUND_UP(clk_get_rate(a3700_spi->clk), speed_hz);
+
+	/* correct the prescale value according to cpu spec */
+	if ((prescale > 15) && (prescale <= 30)) {
+		next_even = (prescale + 1) & (u32)(~1);
+		prescale = (next_even >> 1) | 0x10;
+	} else if (prescale > 30) {
+		/* prevent overrun with irrational prescale value */
+		prescale = A3700_SPI_CLK_PRESCALE_MASK;
+	}
 
 	val = spireg_read(a3700_spi, A3700_SPI_IF_CFG_REG);
 	val = val & ~A3700_SPI_CLK_PRESCALE_MASK;
@@ -673,7 +683,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 				  struct spi_transfer *xfer)
 {
 	struct a3700_spi *a3700_spi = spi_master_get_devdata(master);
-	int ret = 0, timeout = A3700_SPI_TIMEOUT;
+	int ret = 0, timeout = 1000;
 	unsigned int nbits = 0;
 	u32 val;
 	u8 rx_buf_avail;
