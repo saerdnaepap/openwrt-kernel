@@ -75,7 +75,7 @@
 				tpm_spi_tis@1{
 					compatible = "tcg,tpm_spi_tis";
 					reg = <1>;	/* Chip Select 1 */
-					spi-max-frequency = <8000000>;
+					spi-max-frequency = <20000000>;
 				};
 			};
 			
