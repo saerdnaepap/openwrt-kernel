@@ -122,7 +122,7 @@ static int get_burstcount(struct tpm_chip *chip)
 		burstcnt += tmp << 8;
 		//read_tpm_word(chip, TPM_STS(chip->vendor.locality) + 1, &burstcount2);//TODO revisit
 		if (burstcnt)
-			return min_t(int,burstcnt, 64); //SPI framesize TODO revisit
+			return min_t(int,burstcnt, 32); //SPI framesize TODO revisit
 		msleep(TPM_TIMEOUT);
 	} while (time_before(jiffies, stop));
 	return -EBUSY;
