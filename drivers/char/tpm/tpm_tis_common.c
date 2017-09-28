@@ -122,7 +122,7 @@ static int get_burstcount(struct tpm_chip *chip)
 		burstcnt += tmp << 8;
 		//read_tpm_word(chip, TPM_STS(chip->vendor.locality) + 1, &burstcount2);//TODO revisit
 		if (burstcnt)
-			return min_t(int,burstcnt, 32); //SPI framesize TODO revisit
+			return min_t(int,burstcnt, 64); //SPI framesize TODO revisit
 		msleep(TPM_TIMEOUT);
 	} while (time_before(jiffies, stop));
 	return -EBUSY;
@@ -140,7 +140,7 @@ static int recv_data(struct tpm_chip *chip, u8 *buf, size_t count)
 	       == 0) {
 		burstcnt = get_burstcount(chip);
 		transfer_size = min_t (size_t, (count - size), burstcnt);
-		pr_err("size %d count %d bct %d tsize %d\n", size, count, burstcnt, transfer_size);
+		//pr_err("size %d count %d bct %d tsize %d\n", size, count, burstcnt, transfer_size);
 		read_tpm_bytes(chip, TPM_DATA_FIFO(chip->vendor.locality), transfer_size, &buf[size]);
 		size += transfer_size;
 	}

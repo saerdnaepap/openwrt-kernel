@@ -112,7 +112,7 @@ struct a3700_spi {
 	const u8 *tx_buf;
 	u8 *rx_buf;
 	size_t buf_len;
-	size_t rx_buf_len;
+//	size_t rx_buf_len;
 	u8 byte_len;
 	u32 wait_mask;
 	struct completion done;
@@ -498,8 +498,10 @@ static void a3700_spi_header_set(struct a3700_spi *a3700_spi)
 		spireg_write(a3700_spi, A3700_SPI_IF_HDR_CNT_REG, val);
 		/* instruction code is always in the first byte of tx_buf */
 		spireg_write(a3700_spi, A3700_SPI_IF_INST_REG, a3700_spi->tx_buf[0]);
-		/* shift tx buffer accordingly */
+		/* shift tx and rx buffer if necessary accordingly */
 		a3700_spi->tx_buf++;
+		if (a3700_spi->rx_buf)
+			a3700_spi->rx_buf++;
 		a3700_spi->buf_len--;
 		/* address bytes are in the next 3 bytes */
 		addr_cnt = 3;
@@ -508,6 +510,8 @@ static void a3700_spi_header_set(struct a3700_spi *a3700_spi)
 		while (addr_cnt--) {
 			val = (val << 8) | a3700_spi->tx_buf[0];
 			a3700_spi->tx_buf++;
+			if (a3700_spi->rx_buf)
+				a3700_spi->rx_buf++;
 		}
 		spireg_write(a3700_spi, A3700_SPI_IF_ADDR_REG, val);
 	}
@@ -596,22 +600,22 @@ static int a3700_spi_fifo_read(struct a3700_spi *a3700_spi)
 	u32 val;
 
 	/* shift rx_buf by the bytes of the tx header */
-	if (a3700_spi->rx_buf_len > 4) {
-		a3700_spi->rx_buf_len -= 4;
-		a3700_spi->rx_buf += 4;
-	} else {
-		pr_err("%s: rx_buf too small!\n", __func__);
-	}
+//	if (a3700_spi->rx_buf_len > 4) {
+//		a3700_spi->rx_buf_len -= 4;
+//		a3700_spi->rx_buf += 4;
+//	} else {
+//		pr_err("%s: rx_buf too small!\n", __func__);
+//	}
 //	printk("rx_buf_len: %lu\n", a3700_spi->rx_buf_len);
-	while (!a3700_is_rfifo_empty(a3700_spi) && a3700_spi->rx_buf_len) {
+	while (!a3700_is_rfifo_empty(a3700_spi) && a3700_spi->buf_len) {
 		val = spireg_read(a3700_spi, A3700_SPI_DATA_IN_REG);
 //		printk("data_in: 0x%x\n", val);
-		if (a3700_spi->rx_buf_len >= 4) {
+		if (a3700_spi->buf_len >= 4) {
 			u32 data = le32_to_cpu(val);
 
 			memcpy(a3700_spi->rx_buf, &data, 4);
 
-			a3700_spi->rx_buf_len -= 4;
+			a3700_spi->buf_len -= 4;
 			a3700_spi->rx_buf += 4;
 		} else {
 			/*
@@ -619,12 +623,12 @@ static int a3700_spi_fifo_read(struct a3700_spi *a3700_spi)
 			 * avoid memory overwriting and just write the left rx
 			 * buffer bytes.
 			 */
-			while (a3700_spi->rx_buf_len) {
+			while (a3700_spi->buf_len) {
 				*a3700_spi->rx_buf = val & 0xff;
 				val >>= 8;
 
-				a3700_spi->rx_buf_len--;
-				if (a3700_spi->rx_buf_len)
+				a3700_spi->buf_len--;
+				if (a3700_spi->buf_len)
 					a3700_spi->rx_buf++;
 			}
 		}
@@ -693,7 +697,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 	a3700_spi->tx_buf  = xfer->tx_buf;
 	a3700_spi->rx_buf  = xfer->rx_buf;
 	a3700_spi->buf_len = xfer->len;
-	a3700_spi->rx_buf_len = xfer->len;
+//	a3700_spi->rx_buf_len = xfer->len;
 
 	if (a3700_spi->rx_buf)
 		rx_buf_avail = 1;
@@ -741,7 +745,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 		a3700_spi->xmit_data = (a3700_spi->buf_len != 0);
 	}
 
-//	while (a3700_spi->buf_len) {
+	while (a3700_spi->buf_len) {
 		/* only transmit if the tx_buf content has not been
 		 * put to the header registers already.
 		 */
@@ -774,7 +778,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 			if (ret)
 				goto error;
 		}
-//	}
+	}
 
 	/*
 	 * Stop a write transfer in fifo mode:
