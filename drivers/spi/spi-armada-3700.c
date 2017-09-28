@@ -112,7 +112,6 @@ struct a3700_spi {
 	const u8 *tx_buf;
 	u8 *rx_buf;
 	size_t buf_len;
-//	size_t rx_buf_len;
 	u8 byte_len;
 	u32 wait_mask;
 	struct completion done;
@@ -492,6 +491,16 @@ static void a3700_spi_header_set(struct a3700_spi *a3700_spi)
 		val = spireg_read(a3700_spi, A3700_SPI_IF_HDR_CNT_REG);
 		/* dummy_cnt und read mode count can stay 0 bytes,
 		 * but program INSTR_CNT and ADDR_CNT correctly.
+		 * This is a workaround for overcoming the problem
+		 * that the a3700 master in fifo mode only supports
+		 * half-duplex transmission. Nevertheless the HW
+		 * is able to transmit, but cannot receive before
+		 * transmit (either by using the hdr register or by
+		 * writing to DATA_OUT register) is stopped. The following
+		 * "fake duplex workaround" only works for spi slave drivers
+		 * using exactly 4 Bytes as instruction code and address during
+		 * read access. Therefore this workaround depends on the used
+		 * slave spi driver !!!!
 		 */
 		val |= ((1 & A3700_SPI_INSTR_CNT_MASK) << A3700_SPI_INSTR_CNT_BIT); //one byte instruction code
 		val |= ((3 & A3700_SPI_ADDR_CNT_MASK) << A3700_SPI_ADDR_CNT_BIT); //3 bytes address
@@ -515,31 +524,6 @@ static void a3700_spi_header_set(struct a3700_spi *a3700_spi)
 		}
 		spireg_write(a3700_spi, A3700_SPI_IF_ADDR_REG, val);
 	}
-
-//	if (a3700_spi->tx_buf && a3700_spi->buf_len % 4) {
-//		/* when tx data is not 4 bytes aligned, there will be unexpected
-//		 * MSB bytes of SPI output register, since it always shifts out
-//		 * as whole 4 bytes. Which might causes incorrect transaction with
-//		 * some device and flash. To fix this, Serial Peripheral Interface
-//		 * Address (0xd0010614) in header count is used to transfer
-//		 * 1 to 3 bytes to make the rest of data 4 bytes aligned.
-//		 */
-//		addr_cnt = a3700_spi->buf_len % 4;
-//		val |= ((addr_cnt & A3700_SPI_ADDR_CNT_MASK)
-//			    << A3700_SPI_ADDR_CNT_BIT);
-//		spireg_write(a3700_spi, A3700_SPI_IF_HDR_CNT_REG, val);
-//
-//		/* Update the buffer length to be transferred */
-//		a3700_spi->buf_len -= addr_cnt;
-//
-//		/* transfer 1~3 bytes by address count */
-//		val = 0;
-//		while (addr_cnt--) {
-//			val = (val << 8) | a3700_spi->tx_buf[0];
-//			a3700_spi->tx_buf++;
-//		}
-//		spireg_write(a3700_spi, A3700_SPI_IF_ADDR_REG, val);
-//	}
 }
 
 static int a3700_is_wfifo_full(struct a3700_spi *a3700_spi)
@@ -555,7 +539,6 @@ static int a3700_spi_fifo_write(struct a3700_spi *a3700_spi)
 	u32 val;
 	int i = 0;
 
-//	printk("buf_len: %lu\n", a3700_spi->buf_len);
 	while (!a3700_is_wfifo_full(a3700_spi) && a3700_spi->buf_len) {
 		val = 0;
 		if (a3700_spi->buf_len >= 4) {
@@ -572,10 +555,8 @@ static int a3700_spi_fifo_write(struct a3700_spi *a3700_spi)
 			 */
 			val = GENMASK(31, 0);
 			while (a3700_spi->buf_len) {
-//				printk("tx_buf 0x%x\n", *a3700_spi->tx_buf);
 				val &= ~(0xff << (8 * i));
 				val |= *a3700_spi->tx_buf++ << (8 * i);
-//				printk("val 0x%x\n", val);
 				i++;
 				a3700_spi->buf_len--;
 			}
@@ -599,17 +580,8 @@ static int a3700_spi_fifo_read(struct a3700_spi *a3700_spi)
 {
 	u32 val;
 
-	/* shift rx_buf by the bytes of the tx header */
-//	if (a3700_spi->rx_buf_len > 4) {
-//		a3700_spi->rx_buf_len -= 4;
-//		a3700_spi->rx_buf += 4;
-//	} else {
-//		pr_err("%s: rx_buf too small!\n", __func__);
-//	}
-//	printk("rx_buf_len: %lu\n", a3700_spi->rx_buf_len);
 	while (!a3700_is_rfifo_empty(a3700_spi) && a3700_spi->buf_len) {
 		val = spireg_read(a3700_spi, A3700_SPI_DATA_IN_REG);
-//		printk("data_in: 0x%x\n", val);
 		if (a3700_spi->buf_len >= 4) {
 			u32 data = le32_to_cpu(val);
 
@@ -697,13 +669,20 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 	a3700_spi->tx_buf  = xfer->tx_buf;
 	a3700_spi->rx_buf  = xfer->rx_buf;
 	a3700_spi->buf_len = xfer->len;
-//	a3700_spi->rx_buf_len = xfer->len;
 
+	/* as the HW only supports half-duplex
+	 * operation in fifo mode (cannot receive unless no
+	 * data is shifted out to MOSI), we
+	 * need to distinguish between a rx or
+	 * tx-only access. Use the existence of an rx_buf
+	 * within the transfer to accomplish this.
+	 * WARNING: this results in a dependency to the
+	 * slave spi driver!!!!
+	 */
 	if (a3700_spi->rx_buf)
 		rx_buf_avail = 1;
 	else {
 		rx_buf_avail = 0;
-//		printk("no rx_buf. tx buf_len %lu\n", a3700_spi->buf_len);
 	}
 
 	if (xfer->tx_buf)
@@ -731,7 +710,6 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 		spireg_write(a3700_spi, A3700_SPI_IF_CFG_REG, val);
 	} else if (xfer->tx_buf) {
 		/* Start Write transfer */
-//		printk("start write\n");
 		val = spireg_read(a3700_spi, A3700_SPI_IF_CFG_REG);
 		val |= (A3700_SPI_XFER_START | A3700_SPI_RW_EN);
 		spireg_write(a3700_spi, A3700_SPI_IF_CFG_REG, val);
@@ -748,6 +726,9 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 	while (a3700_spi->buf_len) {
 		/* only transmit if the tx_buf content has not been
 		 * put to the header registers already.
+		 * Part of the duplexity WAR: prevent writing to
+		 * DATA_OUT during read access (except for the HDR)
+		 * as this prevents reception of data in the rx fifo.
 		 */
 		if ((a3700_spi->tx_buf) && (a3700_spi->buf_len) && !(rx_buf_avail)) {
 			/* Wait wfifo ready */
@@ -762,7 +743,6 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 			ret = a3700_spi_fifo_write(a3700_spi);
 			if (ret)
 				goto error;
-//		} else if (a3700_spi->rx_buf) {
 		}
 		if (a3700_spi->rx_buf) {
 			/* Wait rfifo ready */
@@ -890,7 +870,6 @@ static int a3700_spi_probe(struct platform_device *pdev)
 	master->transfer_one = a3700_spi_transfer_one;
 	master->unprepare_message = a3700_spi_unprepare_message;
 	master->set_cs = a3700_spi_set_cs;
-//	master->flags = SPI_MASTER_HALF_DUPLEX;
 	master->mode_bits |= (SPI_RX_DUAL | SPI_TX_DUAL |
 			      SPI_RX_QUAD | SPI_TX_QUAD);
 

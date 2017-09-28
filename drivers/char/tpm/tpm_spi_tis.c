@@ -68,16 +68,10 @@ static void read_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8 
 	comms->tx_buf[2] = (addr>>8)  & 0xFF;
 	comms->tx_buf[3] = (addr)     & 0xFF;
 
-	//printk("read_spi_bytes len %u\n", comms->spi_xfer.len);
-
-//	spi_sync_transfer(comms->spi_device, &comms->spi_xfer, 1);
-
 	spi_message_init_with_transfers(&msg, &comms->spi_xfer, 1);
 
 	spi_sync_locked(comms->spi_device, &msg);
 
-//	printk("result: 0x%x 0x%x 0x%x 0x%x 0x%x\n", comms->rx_buf[0], comms->rx_buf[1],
-//			comms->rx_buf[2], comms->rx_buf[3], comms->rx_buf[4]);
 	memcpy(result, &comms->rx_buf[4], len);
 	memset(comms->rx_buf, 0, 4 + len);
 
@@ -103,11 +97,13 @@ static void write_spi_bytes(struct tpm_chip *chip, u32 addr, u8 len, u8 size, u8
 	comms->tx_buf[2] = (addr>>8)  & 0xFF;
 	comms->tx_buf[3] = (addr)     & 0xFF;
 	memcpy(&comms->tx_buf[4], value, len);
-//	printk("write_bytes: 0x%x 0x%x 0x%x 0x%x 0x%x\n", comms->tx_buf[0], comms->tx_buf[1],
-//			comms->tx_buf[2], comms->tx_buf[3], comms->tx_buf[4]);
 
-//	spi_sync_transfer(comms->spi_device, &comms->spi_xfer, 1);
-//	spi_write(comms->spi_device, &comms->tx_buf, comms->spi_xfer.len);
+	/* This is a hack specific to the fifo operation
+	 * of the armada a3700 spi master: this master supports
+	 * only half-duplex operation. To circumvent this it needs to know
+	 * if it has to receive or not. This is indicated to the master driver
+	 * by using a rx_buf or not.
+	 */
 	t.tx_buf = comms->tx_buf;
 	t.rx_buf = NULL;
 	t.len = comms->spi_xfer.len;
