@@ -2745,7 +2745,7 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 		if (mv88e6xxx_6352_family(ps) || mv88e6xxx_6351_family(ps) ||
 		    mv88e6xxx_6165_family(ps) || mv88e6xxx_6097_family(ps) ||
 		    mv88e6xxx_6320_family(ps) || mv88e6xxx_6390_family(ps)) {
-			reg |= PORT_CONTROL_FRAME_ETHER_TYPE_DSA |
+			reg |= PORT_CONTROL_FRAME_MODE_DSA |
 				PORT_CONTROL_FORWARD_UNKNOWN |
 				PORT_CONTROL_FORWARD_UNKNOWN_MC;
 		}
@@ -2755,7 +2755,7 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 		    mv88e6xxx_6095_family(ps) || mv88e6xxx_6065_family(ps) ||
 		    mv88e6xxx_6185_family(ps) || mv88e6xxx_6320_family(ps) ||
 		    mv88e6xxx_6390_family(ps)) {
-				reg |= PORT_CONTROL_EGRESS_ADD_TAG;
+				reg |= PORT_CONTROL_EGRESS_UNMODIFIED;
 		}
 	}
 	if (dsa_is_dsa_port(ds, port)) {
@@ -2973,12 +2973,15 @@ static int mv88e6xxx_setup_global(struct mv88e6xxx_priv_state *ps)
 	if (err)
 		return err;
 
+	printk("GLOBAL_CONTROL_2 Setting: 0x%x\n", GLOBAL_CONTROL_2_MULTIPLE_CASCADE | (ds->index & 0x1f));
+	printk("Current Setting: 0x%x\n",  _mv88e6xxx_reg_read(ps, REG_GLOBAL, GLOBAL_CONTROL_2));
 	/* Disable remote management, and set the switch's DSA device number. */
 	err = _mv88e6xxx_reg_write(ps, REG_GLOBAL, GLOBAL_CONTROL_2,
 				   GLOBAL_CONTROL_2_MULTIPLE_CASCADE |
 				   (ds->index & 0x1f));
 	if (err)
 		return err;
+	printk("Current Setting: 0x%x\n",  _mv88e6xxx_reg_read(ps, REG_GLOBAL, GLOBAL_CONTROL_2));
 
 	/* Set the default address aging time to 5 minutes, and
 	 * enable address learn messages to be sent to all message

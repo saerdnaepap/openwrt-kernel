@@ -109,7 +109,7 @@
 
 			mdio: mdio@32004 {
 				switch0: switch@0 {
-					compatible = "marvell,mv88e6085";
+					compatible = "marvell,mv88e6xxx";
 					reg = <1>;
 
 					mdio@0 {
