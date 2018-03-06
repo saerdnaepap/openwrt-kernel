@@ -1,6 +1,8 @@
 /*
- * Device Tree file for Marvell Armada 3720 community board
- * Copyright (C) 2016 Marvell
+ * Device Tree file for IUNO Prototype Board
+ * Copyright (C) 2018 Phoenix Contact
+ *
+ * based on DTS file for Espressobin Board ((C) by Marvell)
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -47,9 +49,12 @@
 
 / {
 	model = "IUNO Project Prototype Board";
-	compatible = "marvell,iuno-prototype", "marvell,armada3720", "marvell,armada3710";
+	compatible = "marvell,iuno-prototype", "marvell, armada-3720-community
+", "marvell,armada3720", "marvell,armada3710";
 
 	chosen {
+		/* bootargs needs to be checked for IUNO Prototype Board */
+		bootargs = "console=ttyMV0,115200 earlycon=ar3700_uart,0xd0012000 root=/dev/mmcblk0p1 rw rootwait net.ifnames=0 biosdevname=0";
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -65,17 +70,39 @@
 					marvell,pins = "mpp17";
 					marvell,function = "spi-cs1";
 				};
+				spi0_pins_2: spi-pins-2 {
+					marvell,pins = "mpp18";
+					marvell,function = "spi-cs2";
+				};
 			};
 			
 			spi0: spi@10600 {
 				status = "okay";
 				pinctrl-names = "default";
-				pinctrl-0 = <&spi0_pins &spi_quad_pins &spi0_pins_1>;
+				pinctrl-0 = <&spi0_pins &spi_quad_pins &spi0_pins_1 &spi0_pins_2>;
 
 				tpm_spi_tis@1{
 					compatible = "tcg,tpm_spi_tis";
 					reg = <1>;	/* Chip Select 1 */
 					spi-max-frequency = <20000000>;
+				};
+
+				spi_nor_flash: w25q32dw@0 {
+					#address-cells = <0x1>;
+					#size-cells = <0x1>;
+					compatible = "jedec, spi-nor", "st,mp25p128", "spi-flash";
+					reg = <0>;      /* Chip Select 0 */
+					spi-max-frequency = <0x632ea00>;
+					m25p, fast-read;
+				};
+
+				rtc: pcf2123@0 {
+					#address-cells = <0x1>;
+					#size-cells = <0x1>;
+					compatible = "nxp,rtc-pcf2123";
+					reg = <2>;
+					spi-max-frequency = <0x5f5e10>;
+					spi-cs-high;
 				};
 			};
 			
@@ -85,10 +112,17 @@
 
 			i2c0: i2c@11000 {
 				status = "okay";
+				
+				dtt@49 {
+					compatible = "adi,ad7414";
+					reg = <0x49>;
+				};
+
+				/* PCIe switch still to be added here */
 			};
 
 			i2c1: i2c@11080 {
-				status = "okay";
+				status = "disabled";
 			};
 
 			reg_avs: avs@11500 {
@@ -97,7 +131,7 @@
 
 			eth0: ethernet@30000 {
 				phy-mode = "rgmii-id";
-				status = "okay";
+				status = "disabled";
 				buffer-manager = <&bm>;
 				bm,pool-long = <1>;
 				bm,pool-short = <3>;
@@ -126,7 +160,11 @@
 			mdio: mdio@32004 {
 				switch0: switch@0 {
 					compatible = "marvell,mv88e6xxx";
-					reg = <1>;
+					status = "okay";
+					reg = <0x4>;
+					cpu-port = <0x5>;
+					port-mask = <0x3ff>;
+					dsa,member = <0x0 0x0>;
 
 					mdio@0 {
 						#address-cells = <1>;
@@ -160,32 +198,35 @@
 				phy-names = "usb";
 			};
 
+			/* neither USB3 nor USB2 used for IUNO Prototype Board */
 			usb3@58000 {
 				compatible = "generic-xhci";
 				status = "disabled";
+				/* USB3 not used for IUNO Prototype Board
 				phys = <&utmi_usb32>, /* utmi usb32 dedicated phy */
 				       <&a3700_comphy 0 COMPHY_USB3>; /* usb3 comphy */
-				phy-names = "usb2", "usb3";
+				phy-names = "usb2", "usb3"; */
 			};
 
 			usb@5e000 {
-				status = "okay";
+				status = "disabled";
 				phys = <&utmi_usb2>;
 				phy-names = "usb";
 			};
 
 			utmi_usb32: utmi@5d000 {
-				status = "okay";
+				status = "disabled";
 			};
 
 			utmi_usb2: utmi@5f000 {
-				status = "okay";
+				status = "disabled";
 			};
 
 			sdhci1: sdhci@d0000 {
 				wp-inverted;
 				bus-width = <4>;
 				cd-gpios = <&gpio_nb 3 GPIO_ACTIVE_LOW>;
+				/* change needed here vs. Espressobin ? */
 				no-1-8-v;
 				vqmmc-supply = <&vcc_sd_reg1>;
 				marvell,pad-type = "sd";
@@ -194,11 +235,22 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&sdio_pins &cd_pins>;
 			};
-
+	
+			/* internal fixed mmc */
+			sdhci0: sdhci@d8000 {
+				non-removable;
+				bus-width = <0x8>;
+				mmc-ddr-1_8v;
+				mmc-hs400-1_8v;
+				marvell,pad-type = "fixed-1-8v";
+				status = "okay";
+			};
+	
+			/* no sata interface for IUNO Prototype Board
 			sata@e0000 {
 				phys = <&a3700_comphy 2 COMPHY_SATA0>;
 				status = "okay";
-			};
+			}; */
 
 			vcc_sd_reg1: regulator@0 {
 				compatible = "regulator-gpio";
@@ -222,7 +274,7 @@
 	};
 	dsa@0 {
 		compatible = "marvell,dsa";
-		dsa,ethernet = <&eth0>;
+		dsa,ethernet = <&eth1>;
 		dsa,mii-bus = <&mdio>;
 		#address-cells = <2>;
 		#size-cells = <0>;
@@ -231,7 +283,8 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <1 0>;
-
+	
+				/* Port 0 not used for IUNO Board 
 				port@0 {
 						reg = <0>;
 						label = "cpv";
@@ -239,7 +292,7 @@
 							speed = <1000>;
 							full-duplex;
 						};
-				};
+				}; */
 
 				port@1 {
 						reg = <1>;
@@ -268,6 +321,7 @@
 				port@5 {
 						reg = <5>;
 						label = "cpu";
+						/* ethernet = <&eth1>; */
 						fixed-link {
 							/* see comment for fixed speed of eth1 above! */
 							speed = <1000>;
