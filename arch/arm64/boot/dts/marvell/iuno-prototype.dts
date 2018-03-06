@@ -90,10 +90,10 @@
 				spi_nor_flash: w25q32dw@0 {
 					#address-cells = <0x1>;
 					#size-cells = <0x1>;
-					compatible = "jedec, spi-nor", "st,mp25p128", "spi-flash";
+					compatible = "jedec,spi-nor", "st,mp25p128", "spi-flash";
 					reg = <0>;      /* Chip Select 0 */
 					spi-max-frequency = <0x632ea00>;
-					m25p, fast-read;
+					m25p,fast-read;
 				};
 
 				rtc: pcf2123@0 {
@@ -202,10 +202,7 @@
 			usb3@58000 {
 				compatible = "generic-xhci";
 				status = "disabled";
-				/* USB3 not used for IUNO Prototype Board
-				phys = <&utmi_usb32>, /* utmi usb32 dedicated phy */
-				       <&a3700_comphy 0 COMPHY_USB3>; /* usb3 comphy */
-				phy-names = "usb2", "usb3"; */
+				/* USB3 not used for IUNO Prototype Board */
 			};
 
 			usb@5e000 {
