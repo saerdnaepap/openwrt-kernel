@@ -49,8 +49,7 @@
 
 / {
 	model = "IUNO Project Prototype Board";
-	compatible = "marvell,iuno-prototype", "marvell, armada-3720-community
-", "marvell,armada3720", "marvell,armada3710";
+	compatible = "marvell,iuno-prototype", "marvell, armada-3720-community", "marvell,armada3720", "marvell,armada3710";
 
 	chosen {
 		/* bootargs needs to be checked for IUNO Prototype Board */
@@ -146,6 +145,9 @@
 				phys = <&a3700_comphy 0 COMPHY_SGMII1>;
 				phy-names = "comphy";
 				status = "okay";
+				buffer-manager = <&bm>;
+				bm,pool-long = <1>;
+				bm,pool-short = <3>;
 				fixed-link {
 					/* Here "speed" is set to 1000, GBE MAC is running in 1G mode, */
 					/* but the actual MAC speed may be 1 Gbps or 2.5 Gbps, */
@@ -161,7 +163,7 @@
 				switch0: switch@0 {
 					compatible = "marvell,mv88e6xxx";
 					status = "okay";
-					reg = <0x4>;
+					reg = <1>; /* PHY addr of switch */
 					cpu-port = <0x5>;
 					port-mask = <0x3ff>;
 					dsa,member = <0x0 0x0>;
