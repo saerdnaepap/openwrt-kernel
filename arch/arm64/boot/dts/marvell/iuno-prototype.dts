@@ -226,8 +226,8 @@
 				bus-width = <4>;
 				cd-gpios = <&gpio_nb 3 GPIO_ACTIVE_LOW>;
 				/* change needed here vs. Espressobin ? */
-				no-1-8-v;
-				vqmmc-supply = <&vcc_sd_reg1>;
+				/* no-1-8-v;
+				vqmmc-supply = <&vcc_sd_reg1>; */
 				marvell,pad-type = "sd";
 				status = "okay";
 
@@ -331,9 +331,10 @@
 	};
 };
 
+/*
 &pcie0 {
 	status = "okay";
 	phys = <&a3700_comphy 1 COMPHY_PCIE0>;
 	phy-names = "comphy";
 	reset-gpios = <&gpio_sb 3 GPIO_ACTIVE_HIGH>;
-};
+}; */
