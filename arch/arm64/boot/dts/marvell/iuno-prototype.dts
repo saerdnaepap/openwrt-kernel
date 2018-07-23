@@ -242,7 +242,7 @@
 				mmc-ddr-1_8v;
 				mmc-hs400-1_8v;
 				marvell,pad-type = "fixed-1-8v";
-				status = "okay";
+				status = "disabled";
 			};
 	
 			/* no sata interface for IUNO Prototype Board
