@@ -25,6 +25,8 @@
 #include <linux/netdevice.h>
 #include <linux/gpio/consumer.h>
 #include <linux/phy.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <net/dsa.h>
 #include <net/switchdev.h>
 #include "mv88e6xxx.h"
@@ -3751,9 +3753,12 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 	struct device_node *np = dev->of_node;
 	struct mv88e6xxx_priv_state *ps;
 	int id, prod_num, rev;
+	int ret = 0;
 	struct dsa_switch *ds;
 	u32 eeprom_len;
-	int err;
+	int err, switch_reset;
+	int usec = 1;
+	enum of_gpio_flags flags;
 
 	ds = devm_kzalloc(dev, sizeof(*ds) + sizeof(*ps), GFP_KERNEL);
 	if (!ds)
@@ -3767,6 +3772,27 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 	ps->bus = mdiodev->bus;
 	ps->sw_addr = mdiodev->addr;
 	mutex_init(&ps->smi_mutex);
+
+	printk("mv88e6xxx_probe: reset mdio bus\n");
+	of_property_read_u32(np, "reset-delay-us", &usec);
+	printk("mv88e6xxx_probe: reset-delay-us %i\n", usec);
+	switch_reset = of_get_named_gpio_flags(dev->of_node, "reset-gpios", 0,
+					      &flags);
+	if (gpio_is_valid(switch_reset)) {
+		printk("found valid gpio\n");
+		ret = devm_gpio_request_one(dev, switch_reset, flags,
+					    "mv88e6xxx_reset");
+		if (ret) {
+			dev_err(dev, "failed to request reset gpio %d: %d\n",
+					switch_reset, ret);
+			return -ENODEV;
+		}
+
+		gpio_set_value_cansleep(switch_reset, 1);
+		udelay(usec);
+		gpio_set_value_cansleep(switch_reset, 0);
+	}
+
 
 	get_device(&ps->bus->dev);
 
