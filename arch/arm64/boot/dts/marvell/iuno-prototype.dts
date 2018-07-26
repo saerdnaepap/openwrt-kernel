@@ -142,8 +142,8 @@
 			
 			eth1: ethernet@40000 {
 				phy-mode = "sgmii";
-				phys = <&a3700_comphy 0 COMPHY_SGMII1>;
-				phy-names = "comphy";
+				phys = <&a3700_comphy 0 COMPHY_SGMII0>;
+				phy-names = "comphy"; 
 				status = "okay";
 				buffer-manager = <&bm>;
 				bm,pool-long = <1>;
@@ -160,7 +160,7 @@
 			};
 
 			mdio: mdio@32004 {
-				ethphy0: ethernet-phy@0 {
+				ethphy0: ethernet-phy@1 {
 					reg = <0x0>;
 						
 				};
@@ -168,8 +168,11 @@
 				switch0: switch@1 {
 					compatible = "marvell,mv88e6xxx";
 					reg = <0x01>; /* PHY addr of switch */
-					reset-delay-us = <2>;
+					reset-delay-us = <20000>;
 					reset-gpios = <&gpio_sb 0 GPIO_ACTIVE_LOW>;
+					cpu-port = <0x5>;
+					port-mask = <0x3ff>;
+					dsa,member = <0x0 0x0>;
 
 					mdio@0 {
 						#address-cells = <1>;
@@ -245,7 +248,7 @@
 				mmc-ddr-1_8v;
 				mmc-hs400-1_8v;
 				marvell,pad-type = "fixed-1-8v";
-				status = "disabled";
+				status = "okay";
 			};
 	
 			/* no sata interface for IUNO Prototype Board
@@ -285,17 +288,10 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <1 0>;
+				cpu-port = <0x5>;
+				port-mask = <0x3ff>;
+				dsa,member = <0x0 0x0>;
 	
-				/* Port 0 not used for IUNO Board */
-				port@0 {
-						reg = <0>;
-						label = "cpv";
-						fixed-link {
-							speed = <1000>;
-							full-duplex;
-						};
-				};
-
 				port@1 {
 						reg = <1>;
 						label = "wan";
@@ -323,12 +319,7 @@
 				port@5 {
 						reg = <5>;
 						label = "cpu";
-						/* ethernet = <&eth1>; */
-						fixed-link {
-							/* see comment for fixed speed of eth1 above! */
-							speed = <1000>;
-							full-duplex;
-						};						
+						ethernet = <&eth1>;
 				};
 		};
 	};
