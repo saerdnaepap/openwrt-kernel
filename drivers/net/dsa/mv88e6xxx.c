@@ -1120,9 +1120,7 @@ static int mv88e6xxx_mdio_read_indirect_c45(struct mv88e6xxx_priv_state *ps,
 	u16 val;
 #define __bf_shf(x) (__builtin_ffsll(x) - 1)
 
-	printk("port: %x, reg: %x, dev: %x, addr: %x, dev2: %x, reg2: %x\n", port, reg, dev, addr, dev2, reg2);
 	/* first write address to data field */
-	printk("Write address: 0x%x\n", addr);
 
 	ret = mv88e6xxx_mdio_wait(ps);
 	if (ret < 0)
@@ -1134,12 +1132,10 @@ static int mv88e6xxx_mdio_read_indirect_c45(struct mv88e6xxx_priv_state *ps,
 
 	/* G2_SMI_PHY_CMD_OP_45_WRITE_ADDR */
 	dev2 <<=__bf_shf(MV88E6XXX_G2_SMI_PHY_CMD_DEV_ADDR_MASK);
-	printk("dev2 shifted 0x%x\n", dev2);
 
 	val = 	GLOBAL2_SMI_OP_45_WRITE_ADDR | (dev2 & MV88E6XXX_G2_SMI_PHY_CMD_DEV_ADDR_MASK) |
 			(reg2 & MV88E6XXX_G2_SMI_PHY_CMD_REG_ADDR_MASK);
 
-	printk("Write GLOBAL2_SMI_OP_45_WRITE_ADDR val=0x%x\n",val);
 	ret = _mv88e6xxx_reg_write(ps, REG_GLOBAL2, GLOBAL2_SMI_OP, val);
 	if (ret < 0)
 		return ret;
@@ -1152,7 +1148,6 @@ static int mv88e6xxx_mdio_read_indirect_c45(struct mv88e6xxx_priv_state *ps,
 	val = 	GLOBAL2_SMI_OP_45_READ_DATA | (dev2 & MV88E6XXX_G2_SMI_PHY_CMD_DEV_ADDR_MASK) |
 			(reg2 & MV88E6XXX_G2_SMI_PHY_CMD_REG_ADDR_MASK);
 
-	printk("Write GLOBAL2_SMI_OP_45_READ_DATA val=0x%x\n",val);
 	ret = _mv88e6xxx_reg_write(ps, REG_GLOBAL2, GLOBAL2_SMI_OP, val);
 	if (ret < 0)
 		return ret;
@@ -2696,7 +2691,6 @@ static int mv88e6xxx_switch_reset(struct mv88e6xxx_priv_state *ps)
 	ret = _mv88e6xxx_reg_read(ps, REG_GLOBAL, GLOBAL_CONTROL);
 	if (ret < 0)
 		return ret;
-	printk("Before reset: GLOBAL_CONTROL ret=0x%x\n", ret);
 	ret |= GLOBAL_CONTROL_SW_RESET;
 	ret = _mv88e6xxx_reg_write(ps, REG_GLOBAL, GLOBAL_CONTROL, ret);
 	if (ret < 0)
@@ -2725,12 +2719,10 @@ static int mv88e6xxx_switch_reset(struct mv88e6xxx_priv_state *ps)
 			return ret;
 
 		if (ret & GLOBAL_STATUS_PPU_STATE) {
-			printk("PPU is polling!\n");
 			return 0;
 		}
 		usleep_range(1000, 2000);
 	}
-//	return ret;
 	return -ETIMEDOUT;
 }
 
@@ -2772,7 +2764,6 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 		 * full duplex.
 		 */
 		reg = _mv88e6xxx_reg_read(ps, REG_PORT(port), PORT_PCS_CTRL);
-		printk("Port %i: PORT_PCS_CTRL read: 0x%x\n", port, reg);
 		if (dsa_is_cpu_port(ds, port) || dsa_is_dsa_port(ds, port)) {
 			reg &= ~PORT_PCS_CTRL_UNFORCED;
 			reg |= PORT_PCS_CTRL_FORCE_LINK |
@@ -2783,30 +2774,21 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 				/* configure RGMII Delay on cpu / dsa port */
 				reg |= PORT_PCS_CTRL_FORCE_SPEED;
 				if (port == 0) {
-					printk("Port %i: set rgmii delay\n", port);
 					reg |= PORT_PCS_CTRL_RGMII_DELAY_TXCLK |
 							PORT_PCS_CTRL_RGMII_DELAY_RXCLK;
 				}
 			}
 			if (mv88e6xxx_6065_family(ps))
 				reg |= PORT_PCS_CTRL_100;
-//			else if (mv88e6xxx_6352_family(ps) && (port == 5)) {
-//				printk("set port 5 to 2500 Mbps?\n");
-//				reg |= PORT_PCS_CTRL_2500 |
-//						PORT_PCS_CTRL_ALT_SPEED;
-//				reg &= ~(PORT_PCS_CTRL_FORCE_SPEED);
-//			} else
 			else
 				reg |= PORT_PCS_CTRL_1000;
 		} else {
 			reg |= PORT_PCS_CTRL_UNFORCED;
 		}
-		printk("PORT_PCS_CTRL write: 0x%x\n", reg);
 
 		ret = _mv88e6xxx_reg_write(ps, REG_PORT(port),
 					   PORT_PCS_CTRL, reg);
 		if (ret) {
-			printk("Error reg write PORT_PCS_CONTROL!\n");
 			return ret;
 		}
 
@@ -2836,7 +2818,6 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 		PORT_CONTROL_USE_TAG | PORT_CONTROL_USE_IP |
 		PORT_CONTROL_STATE_FORWARDING;
 	if (dsa_is_cpu_port(ds, port)) {
-		printk("Port %i is cpu port\n", port);
 		if (mv88e6xxx_6095_family(ps) || mv88e6xxx_6185_family(ps))
 			reg |= PORT_CONTROL_DSA_TAG;
 		if (mv88e6xxx_6352_family(ps) || mv88e6xxx_6351_family(ps) ||
@@ -2856,7 +2837,6 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 		}
 	}
 	if (dsa_is_dsa_port(ds, port)) {
-		printk("Port %i is dsa port\n", port);
 		if (mv88e6xxx_6095_family(ps) || mv88e6xxx_6185_family(ps))
 			reg |= PORT_CONTROL_DSA_TAG;
 		if (mv88e6xxx_6352_family(ps) || mv88e6xxx_6351_family(ps) ||
@@ -2870,11 +2850,9 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 				PORT_CONTROL_FORWARD_UNKNOWN_MC;
 	}
 	if (reg) {
-		printk("PORT_CONTROL write: 0x%x\n", reg);
 		ret = _mv88e6xxx_reg_write(ps, REG_PORT(port),
 					   PORT_CONTROL, reg);
 		if (ret) {
-			printk("PORT_CONTROL write for port %i failed\n", port);
 			return ret;
 		}
 	}
@@ -2885,22 +2863,18 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 		 */
 		reg_c45 = MII_ADDR_C45 | MV88E6390_SERDES_DEVICE |
 				MV88E6390_SGMII_CONTROL;
-//					MV88E6390_PCS_CONTROL_1;
 
 		reg_sgmii = mv88e6xxx_mdio_read_indirect_c45(ps, REG_PORT(port), reg_c45);
-//		reg_sgmii = mv88e6xxx_mdio_read_indirect_c45(ps, port, reg_c45);
-		printk("Read SGMII_CONTROL for port %i: 0x%x\n", port, reg_sgmii);
 
 		reg_sgmii &= ~(MV88E6390_SGMII_CONTROL_RESET |
 						MV88E6390_SGMII_CONTROL_LOOPBACK |
 						MV88E6390_SGMII_CONTROL_PDOWN);
 
-		printk("Write SGMII_CONTROL: 0x%x\n", reg_sgmii);
+//		printk("Write SGMII_CONTROL: 0x%x\n", reg_sgmii);
 //			ret = _mv88e6xxx_reg_write(ps, REG_PORT(port), reg_c45, reg_sgmii);
 //			ret = mv88e6xxx_mdio_write_indirect(ps, REG_PORT(port), MV88E6390_SGMII_CONTROL, reg_sgmii);
 
 		if (ret) {
-			printk("Error reg write SGMII_CONTROL!\n");
 			return ret;
 		}
 	}
@@ -2911,16 +2885,13 @@ static int mv88e6xxx_setup_port(struct mv88e6xxx_priv_state *ps, int port)
 	if (mv88e6xxx_6352_family(ps) || mv88e6xxx_6390_family(ps)) {
 		ret = _mv88e6xxx_reg_read(ps, REG_PORT(port), PORT_STATUS);
 		if (ret < 0) {
-			printk("Failed to get CMODE for port %i!\n", port);
 			return ret;
 		}
-		printk("Port %i PORT_STATUS 0x%x\n", port, ret);
 		ret &= PORT_STATUS_CMODE_MASK;
 		if ((ret == PORT_STATUS_CMODE_100BASE_X) ||
 		    (ret == PORT_STATUS_CMODE_1000BASE_X) ||
 		    (ret == PORT_STATUS_CMODE_SGMII) ||
 			(ret == PORT_STATUS_CMODE_2500BASE_X)) {
-			printk("Power on SERDES for port %i\n", port);
 			ret = mv88e6xxx_power_on_serdes(ps);
 			if (ret < 0)
 				return ret;
@@ -3095,9 +3066,7 @@ static int mv88e6xxx_setup_global(struct mv88e6xxx_priv_state *ps)
 	if (err)
 		return err;
 
-	printk("Upstream port: %u\n", upstream_port);
 	if (mv88e6xxx_6352_family(ps)) {
-		printk("mv88e6352 family\n");
 		/* set CPU / upstream port */
 		reg = MV88E6390_G1_MONITOR_MGMT_CTL_UPDATE | MV88E6390_G1_MONITOR_MGMT_CTL_PTR_CPU_DEST |
 				(upstream_port & 0xff);
@@ -3108,8 +3077,6 @@ static int mv88e6xxx_setup_global(struct mv88e6xxx_priv_state *ps)
 		err = _mv88e6xxx_reg_write(ps, REG_GLOBAL, GLOBAL_MONITOR_CONTROL, reg);
 		if (err)
 			return err;
-
-		printk("G1 CPU port setting: 0x%x\n", _mv88e6xxx_reg_read(ps, REG_GLOBAL, GLOBAL_MONITOR_CONTROL));
 
 		/* set cpu / upstream port for ingress */
 		reg = MV88E6390_G1_MONITOR_MGMT_CTL_UPDATE | MV88E6390_G1_MONITOR_MGMT_CTL_PTR_INGRESS_DEST |
@@ -3145,15 +3112,12 @@ static int mv88e6xxx_setup_global(struct mv88e6xxx_priv_state *ps)
 			return err;
 	}
 
-	printk("GLOBAL_CONTROL_2 Setting: 0x%x\n", GLOBAL_CONTROL_2_MULTIPLE_CASCADE | (ds->index & 0x1f));
-	printk("Current Setting: 0x%x\n",  _mv88e6xxx_reg_read(ps, REG_GLOBAL, GLOBAL_CONTROL_2));
 	/* Disable remote management, and set the switch's DSA device number. */
 	err = _mv88e6xxx_reg_write(ps, REG_GLOBAL, GLOBAL_CONTROL_2,
 				   GLOBAL_CONTROL_2_MULTIPLE_CASCADE |
 				   (ds->index & 0x1f));
 	if (err)
 		return err;
-	printk("Current Setting: 0x%x\n",  _mv88e6xxx_reg_read(ps, REG_GLOBAL, GLOBAL_CONTROL_2));
 
 	/* Set the default address aging time to 5 minutes, and
 	 * enable address learn messages to be sent to all message
@@ -3334,24 +3298,17 @@ static int mv88e6xxx_setup(struct dsa_switch *ds)
 
 	mutex_lock(&ps->smi_mutex);
 
-	printk("Switch reset\n");
 	err = mv88e6xxx_switch_reset(ps);
 	if (err)
 		goto unlock;
 
-//	printk("Switch setup\n");
-//	err = mv88e6xxx_setup_global(ps);
-//	if (err)
-//		goto unlock;
 
 	for (i = 0; i < ps->info->num_ports; i++) {
-		printk("Setup port %i\n", i);
 		err = mv88e6xxx_setup_port(ps, i);
 		if (err)
 			goto unlock;
 	}
 
-	printk("Switch setup\n");
 	err = mv88e6xxx_setup_global(ps);
 	if (err)
 		goto unlock;
@@ -3934,12 +3891,10 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 	struct dsa_switch *ds;
 	u32 eeprom_len;
 	int err;
-#if 1
 	int switch_reset;
 	int usec = 1;
 	enum of_gpio_flags flags;
 	int ret = 0;
-#endif
 
 	ds = devm_kzalloc(dev, sizeof(*ds) + sizeof(*ps), GFP_KERNEL);
 	if (!ds)
@@ -3954,14 +3909,10 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 	ps->sw_addr = mdiodev->addr;
 	mutex_init(&ps->smi_mutex);
 
-#if 1
-	printk("mv88e6xxx_probe: reset mdio bus\n");
 	of_property_read_u32(np, "reset-delay-us", &usec);
-	printk("mv88e6xxx_probe: reset-delay-us %i\n", usec);
 	switch_reset = of_get_named_gpio_flags(dev->of_node, "reset-gpios", 0,
 					      &flags);
 	if (gpio_is_valid(switch_reset)) {
-		printk("found valid gpio\n");
 		ret = devm_gpio_request_one(dev, switch_reset, flags,
 					    "reset");
 		if (ret) {
@@ -3975,7 +3926,6 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 		gpio_set_value_cansleep(switch_reset, 0);
 		mdelay(100); //give some time to become accessible
 	}
-#endif
 
 	get_device(&ps->bus->dev);
 
@@ -3983,10 +3933,8 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 
 	id = mv88e6xxx_reg_read(ps, REG_PORT(0), PORT_SWITCH_ID);
 	if (id < 0) {
-		printk("mv88e6xxx_reg_read failed! id=%i\n", id);
 		return id;
 	}
-	printk("mv88e6xxx dev id 0x%x\n", id);
 
 	prod_num = (id & 0xfff0) >> 4;
 	rev = id & 0x000f;
@@ -4000,22 +3948,7 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 	if (!ps->info)
 		return -ENODEV;
 
-#if 0
-	ps->reset = devm_gpiod_get(&mdiodev->dev, "reset", GPIOD_ASIS);
-	if (IS_ERR(ps->reset)) {
-		err = PTR_ERR(ps->reset);
-		if (err == -ENOENT) {
-			printk("no reset pin found...\n");
-			/* Optional, so not an error */
-			ps->reset = NULL;
-		} else {
-			printk("mv88e6xxx_probe: error reset?\n");
-			return err;
-		}
-	}
-#else
 	ps->reset = NULL;
-#endif
 
 	if (mv88e6xxx_has(ps, MV88E6XXX_FLAG_EEPROM) &&
 	    !of_property_read_u32(np, "eeprom-length", &eeprom_len))
@@ -4023,7 +3956,6 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 
 	err = mv88e6xxx_mdio_register(ps, mdiodev->dev.of_node);
 	if (err) {
-		printk("mv88e6xxx_mdio_register failed\n");
 		return err;
 	}
 
@@ -4033,7 +3965,6 @@ int mv88e6xxx_probe(struct mdio_device *mdiodev)
 
 	err = dsa_register_switch(ds, mdiodev->dev.of_node);
 	if (err) {
-		printk("mv88e6xxx_probe: dsa_register_switch failed!\n");
 		mv88e6xxx_mdio_unregister(ps);
 		return err;
 	}
