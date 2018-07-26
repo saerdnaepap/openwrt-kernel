@@ -447,12 +447,18 @@ static int dsa_cpu_parse(struct device_node *port, u32 index,
 	struct device_node *ethernet;
 
 	ethernet = of_parse_phandle(port, "ethernet", 0);
-	if (!ethernet)
+	if (!ethernet) {
+		printk("no ethernet phandle!\n");
 		return -EINVAL;
+	}
+
+	printk("found ethernet device node\n");
 
 	ethernet_dev = of_find_net_device_by_node(ethernet);
 	if (!ethernet_dev)
 		return -EPROBE_DEFER;
+
+	printk("found ethernet_dev for device node\n");
 
 	if (!ds->master_netdev)
 		ds->master_netdev = ethernet_dev;
@@ -467,6 +473,7 @@ static int dsa_cpu_parse(struct device_node *port, u32 index,
 
 	dst->tag_ops = dsa_resolve_tag_protocol(ds->drv->tag_protocol);
 	if (IS_ERR(dst->tag_ops)) {
+		printk("No tagger for this switch!\n");
 		dev_warn(ds->dev, "No tagger for this switch\n");
 		return PTR_ERR(dst->tag_ops);
 	}
@@ -598,21 +605,29 @@ static int _dsa_register_switch(struct dsa_switch *ds, struct device_node *np)
 	int err;
 
 	err = dsa_parse_member(np, &tree, &index);
-	if (err)
+	if (err){
+		printk("dsa_parse_member failed\n");
 		return err;
+	}
 
-	if (IS_ERR(ports))
+	if (IS_ERR(ports)) {
+		printk("is err ports\n");
 		return PTR_ERR(ports);
+	}
 
 	err = dsa_parse_ports_dn(ports, ds);
-	if (err)
+	if (err) {
+		printk("dsa_parse_ports failed\n");
 		return err;
+	}
 
 	dst = dsa_get_dst(tree);
 	if (!dst) {
 		dst = dsa_add_dst(tree);
-		if (!dst)
+		if (!dst) {
+			printk("dsa_get_dst / add_dst failed\n");
 			return -ENOMEM;
+		}
 	}
 
 	if (dst->ds[index]) {
@@ -625,8 +640,10 @@ static int _dsa_register_switch(struct dsa_switch *ds, struct device_node *np)
 	dsa_dst_add_ds(dst, ds, index);
 
 	err = dsa_dst_complete(dst);
-	if (err < 0)
+	if (err < 0) {
+		printk("dsa_dst_complete failed!\n");
 		goto out_del_dst;
+	}
 
 	if (err == 1) {
 		/* Not all switches registered yet */
@@ -636,15 +653,19 @@ static int _dsa_register_switch(struct dsa_switch *ds, struct device_node *np)
 
 	if (dst->applied) {
 		pr_info("DSA: Disjoint trees?\n");
+		printk("Disjoint trees?\n");
 		return -EINVAL;
 	}
 
 	err = dsa_dst_parse(dst);
-	if (err)
+	if (err) {
+		printk("dsa_dst_parse failed\n");
 		goto out_del_dst;
+	}
 
 	err = dsa_dst_apply(dst);
 	if (err) {
+		printk("dsa_dst_apply failed\n");
 		dsa_dst_unapply(dst);
 		goto out_del_dst;
 	}

@@ -319,7 +319,7 @@ static int dsa_switch_setup_one(struct dsa_switch *ds, struct device *parent)
 		name = cd->port_names[i];
 		if (name == NULL)
 			continue;
-
+		printk("Port %i, name: %s\n", i, name);
 		if (!strcmp(name, "cpu")) {
 			if (dst->cpu_switch != -1) {
 				netdev_err(dst->master_netdev,
@@ -354,8 +354,10 @@ static int dsa_switch_setup_one(struct dsa_switch *ds, struct device *parent)
 	 * switch.
 	 */
 	if (dst->cpu_switch == index) {
+		printk("Tag protocol:%d\n", drv->tag_protocol);
 		dst->tag_ops = dsa_resolve_tag_protocol(drv->tag_protocol);
 		if (IS_ERR(dst->tag_ops)) {
+			printk("Error resolving tag protocol!\n");
 			ret = PTR_ERR(dst->tag_ops);
 			goto out;
 		}
