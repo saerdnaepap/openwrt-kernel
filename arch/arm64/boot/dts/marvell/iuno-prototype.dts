@@ -102,7 +102,7 @@
 					reg = <2>;
 					/* spi-max-frequency = <0x5f5e10>; */
 					/* spi-cs-high; */
-					spi-max-frequency = <104000000>;
+					spi-max-frequency = <6666667>;
 				};
 			};
 			
