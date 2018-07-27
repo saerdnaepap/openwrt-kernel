@@ -11,6 +11,7 @@
  * published by the Free Software Foundation.
  */
 
+
 #include <linux/clk.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
@@ -27,6 +28,8 @@
 
 #define DRIVER_NAME			"armada_3700_spi"
 
+#define A3700_SPI_MAX_SPEED_HZ		100000000
+#define A3700_SPI_MAX_PRESCALE		30
 #define A3700_SPI_TIMEOUT		10
 
 /* SPI Register Offest */
@@ -79,6 +82,7 @@
 #define A3700_SPI_BYTE_LEN		BIT(5)
 #define A3700_SPI_CLK_PRESCALE		BIT(0)
 #define A3700_SPI_CLK_PRESCALE_MASK	(0x1f)
+#define A3700_SPI_CLK_EVEN_OFFS		(0x10)
 
 #define A3700_SPI_WFIFO_THRS_BIT	28
 #define A3700_SPI_RFIFO_THRS_BIT	24
@@ -98,9 +102,6 @@
 
 /* A3700_SPI_IF_TIME_REG */
 #define A3700_SPI_CLK_CAPT_EDGE		BIT(7)
-#define DATA_CAP_CLOCK_CYCLE_NS		14	/*Minimum clock cycle of flash*/
-#define RVT_EDGE_FLASH_CAP_FREQ		(1000 * 1000 * 1000 / DATA_CAP_CLOCK_CYCLE_NS)
-#define A3700_SPI_MAX_OUTPUT_CLK_FREQ	(100 * 1000 * 1000)	/*100MHz*/
 
 struct a3700_spi {
 	struct spi_master *master;
@@ -156,11 +157,12 @@ static void a3700_spi_deactivate_cs(struct a3700_spi *a3700_spi,
 }
 
 static int a3700_spi_pin_mode_set(struct a3700_spi *a3700_spi,
-				  unsigned int pin_mode)
+				  unsigned int pin_mode, bool receiving)
 {
 	u32 val;
 
 	val = spireg_read(a3700_spi, A3700_SPI_IF_CFG_REG);
+	val &= ~(A3700_SPI_INST_PIN | A3700_SPI_ADDR_PIN);
 	val &= ~(A3700_SPI_DATA_PIN0 | A3700_SPI_DATA_PIN1);
 
 	switch (pin_mode) {
@@ -171,6 +173,9 @@ static int a3700_spi_pin_mode_set(struct a3700_spi *a3700_spi,
 		break;
 	case SPI_NBITS_QUAD:
 		val |= A3700_SPI_DATA_PIN1;
+		/* RX during address reception uses 4-pin */
+		if (receiving)
+			val |= A3700_SPI_ADDR_PIN;
 		break;
 	default:
 		dev_err(&a3700_spi->master->dev, "wrong pin mode %u", pin_mode);
@@ -182,12 +187,15 @@ static int a3700_spi_pin_mode_set(struct a3700_spi *a3700_spi,
 	return 0;
 }
 
-static void a3700_spi_fifo_mode_set(struct a3700_spi *a3700_spi)
+static void a3700_spi_fifo_mode_set(struct a3700_spi *a3700_spi, bool enable)
 {
 	u32 val;
 
 	val = spireg_read(a3700_spi, A3700_SPI_IF_CFG_REG);
-	val |= A3700_SPI_FIFO_MODE;
+	if (enable)
+		val |= A3700_SPI_FIFO_MODE;
+	else
+		val &= ~A3700_SPI_FIFO_MODE;
 	spireg_write(a3700_spi, A3700_SPI_IF_CFG_REG, val);
 }
 
@@ -212,29 +220,19 @@ static void a3700_spi_mode_set(struct a3700_spi *a3700_spi,
 }
 
 static void a3700_spi_clock_set(struct a3700_spi *a3700_spi,
-				unsigned int speed_hz, u16 mode)
+				unsigned int speed_hz)
 {
 	u32 val;
 	u32 prescale;
-	u32 next_even;
 
-	/*
-	* SPI controller has a maximum output clock freq to flash,
-	* flash could not be working in higher freq than this.
-	*/
-	if (speed_hz >= A3700_SPI_MAX_OUTPUT_CLK_FREQ)
-		prescale = DIV_ROUND_UP(clk_get_rate(a3700_spi->clk), A3700_SPI_MAX_OUTPUT_CLK_FREQ);
-	else
-		prescale = DIV_ROUND_UP(clk_get_rate(a3700_spi->clk), speed_hz);
+	prescale = DIV_ROUND_UP(clk_get_rate(a3700_spi->clk), speed_hz);
 
-	/* correct the prescale value according to cpu spec */
-	if ((prescale > 15) && (prescale <= 30)) {
-		next_even = (prescale + 1) & (u32)(~1);
-		prescale = (next_even >> 1) | 0x10;
-	} else if (prescale > 30) {
-		/* prevent overrun with irrational prescale value */
-		prescale = A3700_SPI_CLK_PRESCALE_MASK;
-	}
+	/* For prescaler values over 15, we can only set it by steps of 2.
+	 * Starting from A3700_SPI_CLK_EVEN_OFFS, we set values from 0 up to
+	 * 30. We only use this range from 16 to 30.
+	 */
+	if (prescale > 15)
+		prescale = A3700_SPI_CLK_EVEN_OFFS + DIV_ROUND_UP(prescale, 2);
 
 	val = spireg_read(a3700_spi, A3700_SPI_IF_CFG_REG);
 	val = val & ~A3700_SPI_CLK_PRESCALE_MASK;
@@ -242,29 +240,11 @@ static void a3700_spi_clock_set(struct a3700_spi *a3700_spi,
 	val = val | (prescale & A3700_SPI_CLK_PRESCALE_MASK);
 	spireg_write(a3700_spi, A3700_SPI_IF_CFG_REG, val);
 
-	/*
-	* If the data output delay from the flash is greater than 1/2 of the clock cycle
-	* (this is usually the case when running at high frequency) needs to set negative
-	* edge of the clock to capture data. For most of SPI flashes, the number is 7ns
-	* (catpuring data time). So it means that SOC set CLK_CAPT_EDGE to negative
-	* edge when SPI flash output flash frequency is more than 71MHz(1/14ns).
-	*/
-	if (clk_get_rate(a3700_spi->clk) / prescale > RVT_EDGE_FLASH_CAP_FREQ) {
+	if (prescale <= 2) {
 		val = spireg_read(a3700_spi, A3700_SPI_IF_TIME_REG);
 		val |= A3700_SPI_CLK_CAPT_EDGE;
 		spireg_write(a3700_spi, A3700_SPI_IF_TIME_REG, val);
 	}
-
-	val = spireg_read(a3700_spi, A3700_SPI_IF_CFG_REG);
-	val &= ~(A3700_SPI_CLK_POL | A3700_SPI_CLK_PHA);
-
-	if (mode & SPI_CPOL)
-		val |= A3700_SPI_CLK_POL;
-
-	if (mode & SPI_CPHA)
-		val |= A3700_SPI_CLK_PHA;
-
-	spireg_write(a3700_spi, A3700_SPI_IF_CFG_REG, val);
 }
 
 static void a3700_spi_bytelen_set(struct a3700_spi *a3700_spi, unsigned int len)
@@ -317,27 +297,13 @@ static int a3700_spi_init(struct a3700_spi *a3700_spi)
 	val &= ~A3700_SPI_SRST;
 	spireg_write(a3700_spi, A3700_SPI_IF_CFG_REG, val);
 
-	/*
-	* Address Register is used to send none 4 byte aligned
-	* header data at first while Data Out/In register is used to
-	* send remain 4 byte aligned data, so address transfer pins
-	* number should be same as data pins; otherwise some commands
-	* such as spi nor's commands of READ_FROM_CACHE_DUAL_IO(0xeb)
-	* and READ_FROM_CACHE_DUAL_IO(0xbb) will fail because these
-	* commands must send address bytes, dummy bytes and data bytes
-	* in 4(quad)/2(dual) pins.
-	*/
-	val = spireg_read(a3700_spi, A3700_SPI_IF_CFG_REG);
-	val |= A3700_SPI_ADDR_PIN;
-	spireg_write(a3700_spi, A3700_SPI_IF_CFG_REG, val);
-
 	/* Disable AUTO_CS and deactivate all chip-selects */
 	a3700_spi_auto_cs_unset(a3700_spi);
 	for (i = 0; i < master->num_chipselect; i++)
 		a3700_spi_deactivate_cs(a3700_spi, i);
 
 	/* Enable FIFO mode */
-	a3700_spi_fifo_mode_set(a3700_spi);
+	a3700_spi_fifo_mode_set(a3700_spi, true);
 
 	/* Set SPI mode */
 	a3700_spi_mode_set(a3700_spi, master->mode_bits);
@@ -424,7 +390,8 @@ static bool a3700_spi_wait_completion(struct spi_device *spi)
 
 	spireg_write(a3700_spi, A3700_SPI_INT_MASK_REG, 0);
 
-	return true;
+	/* Timeout was reached */
+	return false;
 }
 
 static bool a3700_spi_transfer_wait(struct spi_device *spi,
@@ -455,15 +422,20 @@ static void a3700_spi_transfer_setup(struct spi_device *spi,
 				     struct spi_transfer *xfer)
 {
 	struct a3700_spi *a3700_spi;
-	unsigned int byte_len;
 
 	a3700_spi = spi_master_get_devdata(spi->master);
 
-	a3700_spi_clock_set(a3700_spi, xfer->speed_hz, spi->mode);
+	a3700_spi_clock_set(a3700_spi, xfer->speed_hz);
 
-	byte_len = xfer->bits_per_word >> 3;
+	/* Use 4 bytes long transfers. Each transfer method has its way to deal
+	 * with the remaining bytes for non 4-bytes aligned transfers.
+	 */
+	a3700_spi_bytelen_set(a3700_spi, 4);
 
-	a3700_spi_fifo_thres_set(a3700_spi, byte_len);
+	/* Initialize the working buffers */
+	a3700_spi->tx_buf  = xfer->tx_buf;
+	a3700_spi->rx_buf  = xfer->rx_buf;
+	a3700_spi->buf_len = xfer->len;
 }
 
 static void a3700_spi_set_cs(struct spi_device *spi, bool enable)
@@ -478,7 +450,7 @@ static void a3700_spi_set_cs(struct spi_device *spi, bool enable)
 
 static void a3700_spi_header_set(struct a3700_spi *a3700_spi)
 {
-	unsigned int addr_cnt = 0;
+	unsigned int addr_cnt;
 	u32 val = 0;
 
 	/* Clear the header registers */
@@ -487,42 +459,33 @@ static void a3700_spi_header_set(struct a3700_spi *a3700_spi)
 	spireg_write(a3700_spi, A3700_SPI_IF_RMODE_REG, 0);
 	spireg_write(a3700_spi, A3700_SPI_IF_HDR_CNT_REG, 0);
 
-	if ((a3700_spi->tx_buf) && (a3700_spi->buf_len >= 4)) {
-		val = spireg_read(a3700_spi, A3700_SPI_IF_HDR_CNT_REG);
-		/* dummy_cnt und read mode count can stay 0 bytes,
-		 * but program INSTR_CNT and ADDR_CNT correctly.
-		 * This is a workaround for overcoming the problem
-		 * that the a3700 master in fifo mode only supports
-		 * half-duplex transmission. Nevertheless the HW
-		 * is able to transmit, but cannot receive before
-		 * transmit (either by using the hdr register or by
-		 * writing to DATA_OUT register) is stopped. The following
-		 * "fake duplex workaround" only works for spi slave drivers
-		 * using exactly 4 Bytes as instruction code and address during
-		 * read access. Therefore this workaround depends on the used
-		 * slave spi driver !!!!
+	/* Set header counters */
+	if (a3700_spi->tx_buf) {
+		/*
+		 * when tx data is not 4 bytes aligned, there will be unexpected
+		 * bytes out of SPI output register, since it always shifts out
+		 * as whole 4 bytes. This might cause incorrect transaction with
+		 * some devices. To avoid that, use SPI header count feature to
+		 * transfer up to 3 bytes of data first, and then make the rest
+		 * of data 4-byte aligned.
 		 */
-		val |= ((1 & A3700_SPI_INSTR_CNT_MASK) << A3700_SPI_INSTR_CNT_BIT); //one byte instruction code
-		val |= ((3 & A3700_SPI_ADDR_CNT_MASK) << A3700_SPI_ADDR_CNT_BIT); //3 bytes address
-		spireg_write(a3700_spi, A3700_SPI_IF_HDR_CNT_REG, val);
-		/* instruction code is always in the first byte of tx_buf */
-		spireg_write(a3700_spi, A3700_SPI_IF_INST_REG, a3700_spi->tx_buf[0]);
-		/* shift tx and rx buffer if necessary accordingly */
-		a3700_spi->tx_buf++;
-		if (a3700_spi->rx_buf)
-			a3700_spi->rx_buf++;
-		a3700_spi->buf_len--;
-		/* address bytes are in the next 3 bytes */
-		addr_cnt = 3;
-		val = 0;
-		a3700_spi->buf_len -= addr_cnt;
-		while (addr_cnt--) {
-			val = (val << 8) | a3700_spi->tx_buf[0];
-			a3700_spi->tx_buf++;
-			if (a3700_spi->rx_buf)
-				a3700_spi->rx_buf++;
+		addr_cnt = a3700_spi->buf_len % 4;
+		if (addr_cnt) {
+			val = (addr_cnt & A3700_SPI_ADDR_CNT_MASK)
+				<< A3700_SPI_ADDR_CNT_BIT;
+			spireg_write(a3700_spi, A3700_SPI_IF_HDR_CNT_REG, val);
+
+			/* Update the buffer length to be transferred */
+			a3700_spi->buf_len -= addr_cnt;
+
+			/* transfer 1~3 bytes through address count */
+			val = 0;
+			while (addr_cnt--) {
+				val = (val << 8) | a3700_spi->tx_buf[0];
+				a3700_spi->tx_buf++;
+			}
+			spireg_write(a3700_spi, A3700_SPI_IF_ADDR_REG, val);
 		}
-		spireg_write(a3700_spi, A3700_SPI_IF_ADDR_REG, val);
 	}
 }
 
@@ -537,33 +500,12 @@ static int a3700_is_wfifo_full(struct a3700_spi *a3700_spi)
 static int a3700_spi_fifo_write(struct a3700_spi *a3700_spi)
 {
 	u32 val;
-	int i = 0;
 
 	while (!a3700_is_wfifo_full(a3700_spi) && a3700_spi->buf_len) {
-		val = 0;
-		if (a3700_spi->buf_len >= 4) {
-			val = cpu_to_le32(*(u32 *)a3700_spi->tx_buf);
-			spireg_write(a3700_spi, A3700_SPI_DATA_OUT_REG, val);
-			a3700_spi->buf_len -= 4;
-			a3700_spi->tx_buf += 4;
-		} else {
-			/*
-			 * If the remained buffer length is less than 4-bytes,
-			 * we should pad the write buffer with all ones. So that
-			 * it avoids overwrite the unexpected bytes following
-			 * the last one.
-			 */
-			val = GENMASK(31, 0);
-			while (a3700_spi->buf_len) {
-				val &= ~(0xff << (8 * i));
-				val |= *a3700_spi->tx_buf++ << (8 * i);
-				i++;
-				a3700_spi->buf_len--;
-			}
-			spireg_write(a3700_spi, A3700_SPI_DATA_OUT_REG,
-				     val);
-			break;
-		}
+		val = *(u32 *)a3700_spi->tx_buf;
+		spireg_write(a3700_spi, A3700_SPI_DATA_OUT_REG, val);
+		a3700_spi->buf_len -= 4;
+		a3700_spi->tx_buf += 4;
 	}
 
 	return 0;
@@ -583,9 +525,8 @@ static int a3700_spi_fifo_read(struct a3700_spi *a3700_spi)
 	while (!a3700_is_rfifo_empty(a3700_spi) && a3700_spi->buf_len) {
 		val = spireg_read(a3700_spi, A3700_SPI_DATA_IN_REG);
 		if (a3700_spi->buf_len >= 4) {
-			u32 data = le32_to_cpu(val);
 
-			memcpy(a3700_spi->rx_buf, &data, 4);
+			memcpy(a3700_spi->rx_buf, &val, 4);
 
 			a3700_spi->buf_len -= 4;
 			a3700_spi->rx_buf += 4;
@@ -600,8 +541,7 @@ static int a3700_spi_fifo_read(struct a3700_spi *a3700_spi)
 				val >>= 8;
 
 				a3700_spi->buf_len--;
-				if (a3700_spi->buf_len)
-					a3700_spi->rx_buf++;
+				a3700_spi->rx_buf++;
 			}
 		}
 	}
@@ -649,57 +589,46 @@ static int a3700_spi_prepare_message(struct spi_master *master,
 	if (ret)
 		return ret;
 
-	a3700_spi_bytelen_set(a3700_spi, 4);
+	a3700_spi_mode_set(a3700_spi, spi->mode);
 
 	return 0;
 }
 
-static int a3700_spi_transfer_one(struct spi_master *master,
+static int a3700_spi_transfer_one_fifo(struct spi_master *master,
 				  struct spi_device *spi,
 				  struct spi_transfer *xfer)
 {
 	struct a3700_spi *a3700_spi = spi_master_get_devdata(master);
-	int ret = 0, timeout = 1000;
-	unsigned int nbits = 0;
+	int ret = 0, timeout = A3700_SPI_TIMEOUT;
+	unsigned int nbits = 0, byte_len;
 	u32 val;
-	u8 rx_buf_avail;
 
-	a3700_spi_transfer_setup(spi, xfer);
+	/* Make sure we use FIFO mode */
+	a3700_spi_fifo_mode_set(a3700_spi, true);
 
-	a3700_spi->tx_buf  = xfer->tx_buf;
-	a3700_spi->rx_buf  = xfer->rx_buf;
-	a3700_spi->buf_len = xfer->len;
-
-	/* as the HW only supports half-duplex
-	 * operation in fifo mode (cannot receive unless no
-	 * data is shifted out to MOSI), we
-	 * need to distinguish between a rx or
-	 * tx-only access. Use the existence of an rx_buf
-	 * within the transfer to accomplish this.
-	 * WARNING: this results in a dependency to the
-	 * slave spi driver!!!!
-	 */
-	if (a3700_spi->rx_buf)
-		rx_buf_avail = 1;
-	else {
-		rx_buf_avail = 0;
-	}
+	/* Configure FIFO thresholds */
+	byte_len = xfer->bits_per_word >> 3;
+	a3700_spi_fifo_thres_set(a3700_spi, byte_len);
 
 	if (xfer->tx_buf)
 		nbits = xfer->tx_nbits;
 	else if (xfer->rx_buf)
 		nbits = xfer->rx_nbits;
 
-	a3700_spi_pin_mode_set(a3700_spi, nbits);
+	a3700_spi_pin_mode_set(a3700_spi, nbits, xfer->rx_buf ? true : false);
 
 	/* Flush the FIFOs */
 	a3700_spi_fifo_flush(a3700_spi);
 
-	/* Transfer headers */
+	/* Transfer first bytes of data when buffer is not 4-byte aligned */
 	a3700_spi_header_set(a3700_spi);
 
-
 	if (xfer->rx_buf) {
+		/* Clear WFIFO, since it's last 2 bytes are shifted out during
+		 * a read operation
+		 */
+		spireg_write(a3700_spi, A3700_SPI_DATA_OUT_REG, 0);
+
 		/* Set read data length */
 		spireg_write(a3700_spi, A3700_SPI_IF_DIN_CNT_REG,
 			     a3700_spi->buf_len);
@@ -724,13 +653,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 	}
 
 	while (a3700_spi->buf_len) {
-		/* only transmit if the tx_buf content has not been
-		 * put to the header registers already.
-		 * Part of the duplexity WAR: prevent writing to
-		 * DATA_OUT during read access (except for the HDR)
-		 * as this prevents reception of data in the rx fifo.
-		 */
-		if ((a3700_spi->tx_buf) && (a3700_spi->buf_len) && !(rx_buf_avail)) {
+		if (a3700_spi->tx_buf) {
 			/* Wait wfifo ready */
 			if (!a3700_spi_transfer_wait(spi,
 						     A3700_SPI_WFIFO_RDY)) {
@@ -743,8 +666,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 			ret = a3700_spi_fifo_write(a3700_spi);
 			if (ret)
 				goto error;
-		}
-		if (a3700_spi->rx_buf) {
+		} else if (a3700_spi->rx_buf) {
 			/* Wait rfifo ready */
 			if (!a3700_spi_transfer_wait(spi,
 						     A3700_SPI_RFIFO_RDY)) {
@@ -772,7 +694,7 @@ static int a3700_spi_transfer_one(struct spi_master *master,
 	 *	   register
 	 *	- just wait XFER_START bit clear
 	 */
-	if ((a3700_spi->tx_buf) && !(rx_buf_avail)) {
+	if (a3700_spi->tx_buf) {
 		if (a3700_spi->xmit_data) {
 			/*
 			 * If there are data written to the SPI device, wait
@@ -821,6 +743,63 @@ out:
 	return ret;
 }
 
+static int a3700_spi_transfer_one_full_duplex(struct spi_master *master,
+				  struct spi_device *spi,
+				  struct spi_transfer *xfer)
+{
+	struct a3700_spi *a3700_spi = spi_master_get_devdata(master);
+	u32 val;
+
+	/* Disable FIFO mode */
+	a3700_spi_fifo_mode_set(a3700_spi, false);
+
+	while (a3700_spi->buf_len) {
+
+		/* When we have less than 4 bytes to transfer, switch to 1 byte
+		 * mode. This is reset after each transfer
+		 */
+		if (a3700_spi->buf_len < 4)
+			a3700_spi_bytelen_set(a3700_spi, 1);
+
+		if (a3700_spi->byte_len == 1)
+			val = *a3700_spi->tx_buf;
+		else
+			val = *(u32 *)a3700_spi->tx_buf;
+
+		spireg_write(a3700_spi, A3700_SPI_DATA_OUT_REG, val);
+
+		/* Wait for all the data to be shifted in / out */
+		while (!(spireg_read(a3700_spi, A3700_SPI_IF_CTRL_REG) &
+				A3700_SPI_XFER_DONE))
+			cpu_relax();
+
+		val = spireg_read(a3700_spi, A3700_SPI_DATA_IN_REG);
+
+		memcpy(a3700_spi->rx_buf, &val, a3700_spi->byte_len);
+
+		a3700_spi->buf_len -= a3700_spi->byte_len;
+		a3700_spi->tx_buf += a3700_spi->byte_len;
+		a3700_spi->rx_buf += a3700_spi->byte_len;
+
+	}
+
+	spi_finalize_current_transfer(master);
+
+	return 0;
+}
+
+static int a3700_spi_transfer_one(struct spi_master *master,
+				  struct spi_device *spi,
+				  struct spi_transfer *xfer)
+{
+	a3700_spi_transfer_setup(spi, xfer);
+
+	if (xfer->tx_buf && xfer->rx_buf)
+		return a3700_spi_transfer_one_full_duplex(master, spi, xfer);
+
+	return a3700_spi_transfer_one_fifo(master, spi, xfer);
+}
+
 static int a3700_spi_unprepare_message(struct spi_master *master,
 				       struct spi_message *message)
 {
@@ -863,6 +842,7 @@ static int a3700_spi_probe(struct platform_device *pdev)
 
 	master->bus_num = pdev->id;
 	master->dev.of_node = of_node;
+	printk("SPI mode 0\n");
 	master->mode_bits = SPI_MODE_0;
 	master->num_chipselect = num_cs;
 	master->bits_per_word_mask = SPI_BPW_MASK(8) | SPI_BPW_MASK(32);
@@ -899,8 +879,8 @@ static int a3700_spi_probe(struct platform_device *pdev)
 
 	spi->clk = devm_clk_get(dev, NULL);
 	if (IS_ERR(spi->clk)) {
-		ret = -EPROBE_DEFER;
-		goto out;
+		dev_err(dev, "could not find clk: %ld\n", PTR_ERR(spi->clk));
+		goto error;
 	}
 
 	ret = clk_prepare(spi->clk);
@@ -908,6 +888,11 @@ static int a3700_spi_probe(struct platform_device *pdev)
 		dev_err(dev, "could not prepare clk: %d\n", ret);
 		goto error;
 	}
+
+	master->max_speed_hz = min_t(unsigned long, A3700_SPI_MAX_SPEED_HZ,
+					clk_get_rate(spi->clk));
+	master->min_speed_hz = DIV_ROUND_UP(clk_get_rate(spi->clk),
+						A3700_SPI_MAX_PRESCALE);
 
 	ret = a3700_spi_init(spi);
 	if (ret)
