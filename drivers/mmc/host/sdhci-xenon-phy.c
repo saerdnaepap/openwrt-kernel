@@ -146,6 +146,7 @@ enum phy_type_enum {
 enum soc_pad_ctrl_type {
 	SOC_PAD_SD,
 	SOC_PAD_FIXED_1_8V,
+	SOC_PAD_FIXED_3_3V
 };
 
 struct soc_pad_ctrl_table {
@@ -287,6 +288,8 @@ static void armada_3700_soc_pad_voltage_set(struct sdhci_host *host,
 
 	if (params->pad_ctrl.pad_type == SOC_PAD_FIXED_1_8V) {
 		writel(ARMADA_3700_SOC_PAD_1_8V, params->pad_ctrl.reg);
+	} else if (params->pad_ctrl.pad_type == SOC_PAD_FIXED_3_3V) {
+		writel(ARMADA_3700_SOC_PAD_3_3V, params->pad_ctrl.reg);
 	} else if (params->pad_ctrl.pad_type == SOC_PAD_SD) {
 		if (signal_voltage == MMC_SIGNAL_VOLTAGE_180)
 			writel(ARMADA_3700_SOC_PAD_1_8V, params->pad_ctrl.reg);
@@ -682,6 +685,8 @@ static int get_dt_pad_ctrl_data(struct sdhci_host *host,
 		params->pad_ctrl.pad_type = SOC_PAD_SD;
 	} else if (!strcmp(name, "fixed-1-8v")) {
 		params->pad_ctrl.pad_type = SOC_PAD_FIXED_1_8V;
+	} else if (!strcmp(name, "fixed-3-3v")) {
+		params->pad_ctrl.pad_type = SOC_PAD_FIXED_3_3V;
 	} else {
 		dev_err(mmc_dev(host->mmc), "Unsupported SoC PHY PAD ctrl type %s\n",
 			name);
