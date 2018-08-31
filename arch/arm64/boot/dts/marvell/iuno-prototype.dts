@@ -235,7 +235,7 @@
 				/* change needed here vs. Espressobin ? */
 				/* no-1-8-v;
 				vqmmc-supply = <&vcc_sd_reg1>; */
-				marvell,pad-type = "sd";
+				marvell,pad-type = "fixed-3-3v";
 				status = "okay";
 
 				pinctrl-names = "default";
