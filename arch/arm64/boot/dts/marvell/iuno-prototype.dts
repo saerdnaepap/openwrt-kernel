@@ -102,7 +102,7 @@
 					reg = <2>;
 					/* spi-max-frequency = <0x5f5e10>; */
 					/* spi-cs-high; */
-					spi-max-frequency = <6666667>;
+					spi-max-frequency = <5700000>;
 				};
 			};
 			
@@ -233,8 +233,8 @@
 				bus-width = <4>;
 				cd-gpios = <&gpio_nb 3 GPIO_ACTIVE_LOW>;
 				/* change needed here vs. Espressobin ? */
-				/* no-1-8-v;
-				vqmmc-supply = <&vcc_sd_reg1>; */
+				no-1-8-v;
+				/* vqmmc-supply = <&vcc_sd_reg1>; */
 				marvell,pad-type = "fixed-3-3v";
 				status = "okay";
 
