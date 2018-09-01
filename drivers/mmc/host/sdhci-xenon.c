@@ -430,6 +430,8 @@ static int xenon_probe_dt(struct platform_device *pdev)
 	struct sdhci_xenon_priv *priv = sdhci_pltfm_priv(pltfm_host);
 	u32 sdhc_id, nr_sdhc;
 	u32 tuning_count;
+	const char *name;
+	int ret = 0;
 
 	/* Disable HS200 on Armada AP806 */
 	if (of_device_is_compatible(np, "marvell,armada-ap806-sdhci"))
@@ -467,6 +469,16 @@ static int xenon_probe_dt(struct platform_device *pdev)
 		}
 	}
 	priv->tuning_count = tuning_count;
+
+	printk("Check 3.3V MMC\n");
+	ret = of_property_read_string(np, "marvell,pad-type", &name);
+	if (ret) {
+		printk("normal operation\n");
+	} else if (!strcmp(name, "fixed-3-3v")) {
+		printk("Fixed 3.3V operation. Disable voltage switch!\n");
+		host->mmc_host_ops.start_signal_voltage_switch = NULL;
+	}
+
 
 	return xenon_phy_parse_dt(np, host);
 }
